@@ -86,7 +86,7 @@ def register(show_spinner=False) -> str | None:
         backoff = min(backoff + 1, 15)
         time.sleep(backoff)
 
-      if time.monotonic() - start_time > 60 and show_spinner:
+      if time.monotonic() - start_time > 5 and show_spinner:
         dongle_id = UNREGISTERED_DONGLE_ID
         break
 
