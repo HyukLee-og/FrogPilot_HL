@@ -240,7 +240,7 @@ def below_engage_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.
 
 def below_steer_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
   return Alert(
-    f"조향 비활성화({get_display_speed(CP.minSteerSpeed, metric)}이하",
+    f"조향 비활성화({get_display_speed(CP.minSteerSpeed, metric)}이하)",
     "",
     AlertStatus.userPrompt, AlertSize.small,
     Priority.LOW, VisualAlert.steerRequired, AudibleAlert.prompt, 0.4)
@@ -625,7 +625,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventName.cameraFrameRate: {
     ET.PERMANENT: NormalPermanentAlert("카메라의 프레임이 낮습니다", "기기를 재부팅하세요"),
     ET.SOFT_DISABLE: soft_disable_alert("카메라의 프레임이 낮습니다"),
-    ET.NO_ENTRY: NoEntryAlert("C카메라의 프레임이 낮습니다: 기기를 재부팅하세요"),
+    ET.NO_ENTRY: NoEntryAlert("카메라의 프레임이 낮습니다: 기기를 재부팅하세요"),
   },
 
   # Unused

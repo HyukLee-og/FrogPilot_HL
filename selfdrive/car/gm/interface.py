@@ -355,7 +355,8 @@ class CarInterface(CarInterfaceBase):
 
     # Disable the "resumeRequired" event after it's been shown once to not annoy the driver
     if self.resumeRequired_shown and not ret.cruiseState.standstill:
-      self.disable_resumeRequired = True
+      #self.disable_resumeRequired = True
+      pass
 
     if ret.vEgo < self.CP.minSteerSpeed and not self.disable_belowSteerSpeed:
       events.add(EventName.belowSteerSpeed)
@@ -363,7 +364,8 @@ class CarInterface(CarInterfaceBase):
 
     # Disable the "belowSteerSpeed" event after it's been shown once to not annoy the driver
     if self.belowSteerSpeed_shown and ret.vEgo >= self.CP.minSteerSpeed:
-      self.disable_belowSteerSpeed = True
+      #self.disable_belowSteerSpeed = True
+      pass
 
     if (self.CP.flags & GMFlags.CC_LONG.value) and ret.vEgo < self.CP.minEnableSpeed and ret.cruiseState.enabled:
       events.add(EventName.speedTooLow)
