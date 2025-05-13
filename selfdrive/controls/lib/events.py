@@ -559,11 +559,11 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.resumeRequired: {
-    ET.WARNING: Alert(
+    ET.PERMANENT: Alert(
       "오토 홀드",
       "",
-      AlertStatus.userPrompt, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
+      AlertStatus.userPrompt, AlertSize.full,
+      Priority.MID, VisualAlert.none, AudibleAlert.none, .2),
   },
 
   EventName.belowSteerSpeed: {

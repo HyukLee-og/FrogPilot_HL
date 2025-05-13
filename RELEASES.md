@@ -1,5 +1,9 @@
 Version 0.9.7.1.2 (2025-05-13)
 ========================
+오토홀드 alert 수정 (attempt 1)
+
+Version 0.9.7.1.2 (2025-05-13)
+========================
 * registration.py infinite loop fix (attempt 2)
 
 Version 0.9.7.1.1 (2025-05-11)
