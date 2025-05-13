@@ -107,22 +107,18 @@ class PowerMonitoring:
     return int(self.car_battery_capacity_uWh)
 
   # See if we need to shutdown
-  def should_shutdown(self, ignition: bool, in_car: bool, offroad_timestamp: float | None, started_seen: bool, frogpilot_toggles):
-    if offroad_timestamp is None:
+  def should_shutdown(self, ignition, in_car, offroad_timestamp, started_seen, frogpilot_toggles):
+    if offroad_timestamp is None or ignition:
       return False
 
     now = time.monotonic()
-    should_shutdown = False
-    offroad_time = (now - offroad_timestamp)
-    low_voltage_shutdown = (self.car_voltage_mV < (max(frogpilot_toggles.low_voltage_shutdown, VBATT_PAUSE_CHARGING) * 1e3) and
-                            offroad_time > VOLTAGE_SHUTDOWN_MIN_OFFROAD_TIME_S)
-    should_shutdown |= offroad_time > frogpilot_toggles.device_shutdown_time
-    should_shutdown |= low_voltage_shutdown
-    should_shutdown |= (self.car_battery_capacity_uWh <= 0)
-    should_shutdown &= not ignition
-    should_shutdown &= (not self.params.get_bool("DisablePowerDown"))
-    should_shutdown &= in_car
-    should_shutdown &= offroad_time > DELAY_SHUTDOWN_TIME_S
-    should_shutdown |= self.params.get_bool("ForcePowerDown")
-    should_shutdown &= started_seen or (now > MIN_ON_TIME_S)
-    return should_shutdown
+    offroad_time = now - offroad_timestamp
+
+    if self.params.get_bool("DisablePowerDown"): return False
+    if not in_car: return False
+    if offroad_time < frogpilot_toggles.device_shutdown_time: return False
+    if offroad_time < DELAY_SHUTDOWN_TIME_S: return False
+    if not started_seen and now < MIN_ON_TIME_S: return False
+
+    return False  # 실제로는 꺼지지 않음
+
