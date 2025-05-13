@@ -1,7 +1,12 @@
+Version 0.9.7.1.2 (2025-05-13)
+========================
+* registration.py infinite loop fix (attempt 2)
+
 Version 0.9.7.1.1 (2025-05-11)
 ========================
 * registration.py stay time 60 -> 5
 * some events trans are fixed
+
 Version 0.9.7.1 (2025-05-01)
 ========================
 * registration 과정 Skip
