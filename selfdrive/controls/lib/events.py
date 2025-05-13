@@ -562,7 +562,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: Alert(
       "오토 홀드",
       "",
-      AlertStatus.userPrompt, AlertSize.full,
+      AlertStatus.normal, AlertSize.full,
       Priority.MID, VisualAlert.none, AudibleAlert.none, .2),
   },
 
