@@ -1,3 +1,36 @@
+Version 0.9.7.2.2 (2025-05-14)
+========================
+Spinner 수정
+
+Version 0.9.7.2.1 (2025-05-13)
+========================
+부팅 로고 수정
+
+Version 0.9.7.1.5 (2025-05-13)
+========================
+오토홀드 alert 수정 (attempt 3)
+
+Version 0.9.7.1.4 (2025-05-13)
+========================
+오토홀드 alert 수정 (attempt 2)
+
+Version 0.9.7.1.2 (2025-05-13)
+========================
+오토홀드 alert 수정 (attempt 1)
+
+Version 0.9.7.1.2 (2025-05-13)
+========================
+* registration.py infinite loop fix (attempt 2)
+
+Version 0.9.7.1.1 (2025-05-11)
+========================
+* registration.py stay time 60 -> 5
+* some events trans are fixed
+
+Version 0.9.7.1 (2025-05-01)
+========================
+* registration 과정 Skip
+
 Version 0.9.7 (2024-06-13)
 ========================
 * New driving model
