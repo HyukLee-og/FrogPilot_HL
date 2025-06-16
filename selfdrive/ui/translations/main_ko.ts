@@ -3706,11 +3706,11 @@ Want to submit your own animations? Share them in the "custom-themes" channel on
     <name>OnroadAlerts</name>
     <message>
         <source>openpilot Unavailable</source>
-        <translation>오픈파일럿을 사용할수없습니다</translation>
+        <translation>오픈파일럿 부팅 중</translation>
     </message>
     <message>
         <source>Waiting for controls to start</source>
-        <translation>프로세스가 준비중입니다</translation>
+        <translation>프로세스 로드 중</translation>
     </message>
     <message>
         <source>TAKE CONTROL IMMEDIATELY</source>
@@ -3718,7 +3718,7 @@ Want to submit your own animations? Share them in the "custom-themes" channel on
     </message>
     <message>
         <source>Controls Unresponsive</source>
-        <translation>프로세스가 응답하지않습니다</translation>
+        <translation>프로세스가 응답하지 않습니다</translation>
     </message>
     <message>
         <source>Reboot Device</source>
