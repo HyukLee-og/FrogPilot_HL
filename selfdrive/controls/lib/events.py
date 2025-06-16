@@ -375,7 +375,7 @@ def no_lane_available_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.S
 
   return Alert(
     "차선 변경 불가",
-    f"차선 공간이 부족합니다 ({lane_width_msg})",
+    f"변경할 차선의 공간이 부족합니다 - {lane_width_msg}",
     AlertStatus.normal, AlertSize.mid,
     Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2)
 
@@ -390,8 +390,8 @@ def torque_nn_load_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 10.0)
   else:
     return Alert(
-      "NNFF 토크 컨트롤러가 로드되었습니다",
-      model_name,
+      "NNFF 토크 컨트롤러 로드됨",
+      "인공 신경망 기반 모델이 차량을 제어합니다",
       AlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.engage, 5.0)
 
@@ -505,15 +505,15 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventName.preDriverDistracted: {
     ET.PERMANENT: Alert(
       "운전에 집중하세요",
-      "",
-      AlertStatus.normal, AlertSize.small,
+      "운전자 부주의 감지됨",
+      AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
   },
 
   EventName.promptDriverDistracted: {
     ET.PERMANENT: Alert(
       "운전에 집중하세요",
-      "운전자 부주의 감지됨",
+      "미응답시 오픈파일럿이 비활성화됩니다",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
   },
@@ -562,7 +562,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: Alert(
       "오토 홀드",
       "해제하려면 악셀을 밟거나 RES버튼을 누르세요",
-      AlertStatus.normal, AlertSize.mid,
+      AlertStatus.frogpilot, AlertSize.mid,
       Priority.MID, VisualAlert.none, AudibleAlert.none, .2),
   },
 
@@ -588,17 +588,17 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.laneChangeBlocked: {
     ET.WARNING: Alert(
+      "차선 변경 대기중",
       "사각지대에 차량이 감지되었습니다",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .1),
   },
 
   EventName.laneChange: {
     ET.WARNING: Alert(
       "차션 변경 중",
-      "전후방 및 측면을 주의하세요",
-      AlertStatus.normal, AlertSize.mid,
+      "전후방 및 측면에 유의하세요",
+      AlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
   },
 
@@ -697,9 +697,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.preEnableStandstill: {
     ET.PRE_ENABLE: Alert(
+      "오토홀드 대기중",
       "브레이크에서 발을 떼면 활성화됩니다",
-      "",
-      AlertStatus.normal, AlertSize.small,
+      AlertStatus.normal, AlertSize.mid,
       Priority.MID, VisualAlert.none, AudibleAlert.none, .1, creation_delay=1.),
   },
 
@@ -765,7 +765,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventName.noGps: {
     ET.PERMANENT: Alert(
       "GPS 수신 감도 나쁨",
-      "야외에서도 해당 메세지가 계속될경우 하드웨어 결함일 수 있습니다",
+      "야외에서도 해당 메세지가 계속될 경우 하드웨어 결함일 수 있습니다",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOWER, VisualAlert.none, AudibleAlert.none, .2, creation_delay=600.)
   },
