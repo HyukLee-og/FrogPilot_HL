@@ -68,8 +68,7 @@ class CarState(CarStateBase):
     )
     ret.vEgoRaw = mean([ret.wheelSpeeds.fl, ret.wheelSpeeds.fr, ret.wheelSpeeds.rl, ret.wheelSpeeds.rr])
     ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
-    ret.vEgo = -5.692e-9 * ret.vEgo**5 + 2.270e-6 * ret.vEgo**4 - 3.301e-4 * ret.vEgo**3 + 0.0205 * ret.vEgo**2 + 0.5149 * ret.vEgo - 0.0823 * CV.KPH_TO_MS
-    # ret.vEgo = 0.000608451675288002 * ret.vEgo*2 + 1.0732665824213932 ret.vEgo + -4.121049230272518 + 15 * CV.KPH_TO_MS - 기존 수식
+    ret.vEgo = 0.000608451675288002 * ret.vEgo*2 + 1.0732665824213932 ret.vEgo + -4.121049230272518 + 15 * CV.KPH_TO_MS
 
     # sample rear wheel speeds, standstill=True if ECM allows engagement with brake
     ret.standstill = ret.wheelSpeeds.rl <= STANDSTILL_THRESHOLD and ret.wheelSpeeds.rr <= STANDSTILL_THRESHOLD
