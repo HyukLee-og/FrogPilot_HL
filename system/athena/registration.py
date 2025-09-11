@@ -86,7 +86,7 @@ def register(show_spinner=False, register_konik=False) -> str | None:
         backoff = min(backoff + 1, 15)
         time.sleep(backoff)
 
-      if time.monotonic() - start_time > 60 and show_spinner:
+      if time.monotonic() - start_time > 1 and show_spinner:
         dongle_id = UNREGISTERED_DONGLE_ID
         break
 
@@ -94,9 +94,10 @@ def register(show_spinner=False, register_konik=False) -> str | None:
       spinner.close()
 
   if not register_konik and dongle_id != params.get("KonikDongleId", encoding="utf8"):
-    params.put("DongleId", dongle_id)
-    params.put("StockDongleId", dongle_id)
-    set_offroad_alert("Offroad_UnofficialHardware", (dongle_id == UNREGISTERED_DONGLE_ID) and not PC)
+    # params.put("DongleId", dongle_id)
+    # params.put("StockDongleId", dongle_id)
+    # set_offroad_alert("Offroad_UnofficialHardware", (dongle_id == UNREGISTERED_DONGLE_ID) and not PC)
+    pass
   return dongle_id
 
 
