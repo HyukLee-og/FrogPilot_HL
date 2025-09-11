@@ -563,8 +563,8 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventName.resumeRequired: {
     ET.WARNING: Alert(
       "오토 홀드",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
+      "해제하려면 악셀을 밟거나 RES버튼을 누르세요",
+      AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
   },
 
