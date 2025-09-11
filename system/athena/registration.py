@@ -59,7 +59,7 @@ def register(show_spinner=False, register_konik=False) -> str | None:
         cloudlog.exception("Error getting imei, trying again...")
         time.sleep(1)
 
-      if time.monotonic() - start_time > 60 and show_spinner:
+      if time.monotonic() - start_time > 1 and show_spinner:
         spinner.update(f"registering device - serial: {serial}, IMEI: ({imei1}, {imei2})")
 
     params.put("IMEI", imei1)
