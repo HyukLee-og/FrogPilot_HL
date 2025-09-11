@@ -373,11 +373,11 @@ def holiday_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, 
 
 def no_lane_available_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
   lane_width = sm["frogpilotPlan"].laneWidthLeft if CS.leftBlinker else sm["frogpilotPlan"].laneWidthRight
-  lane_width_msg = f"{lane_width:.1f} meters" if metric else f"{lane_width * CV.METER_TO_FOOT:.1f} feet"
+  lane_width_msg = f"{lane_width:.1f} 미터" if metric else f"{lane_width * CV.METER_TO_FOOT:.1f} 피트"
 
   return Alert(
-    "변경할 차선의 공간이 부족합니다",
-    f"Detected lane width is only {lane_width_msg}",
+    "차선 변경 불가",
+    f"변경할 차선의 공간이 부족합니다 - {lane_width_msg}",
     AlertStatus.normal, AlertSize.mid,
     Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2)
 
@@ -393,7 +393,7 @@ def torque_nn_load_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
   else:
     return Alert(
       "NNFF 토크 컨트롤러가 로드되었습니다",
-      model_name,
+      "인공 신경망 기반 모델이 차량을 제어합니다",
       AlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.engage, 5.0)
 
@@ -514,8 +514,8 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.promptDriverDistracted: {
     ET.PERMANENT: Alert(
-      "운전에 집중하세요",
       "운전자 부주의 감지됨",
+      "미응답시 오픈파일럿이 비활성화됩니다",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.steerRequired, AudibleAlert.promptDistracted, .1),
   },
@@ -564,7 +564,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.WARNING: Alert(
       "오토 홀드",
       "해제하려면 악셀을 밟거나 RES버튼을 누르세요",
-      AlertStatus.normal, AlertSize.mid,
+      AlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
   },
 
@@ -590,17 +590,17 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.laneChangeBlocked: {
     ET.WARNING: Alert(
+      "차선 변경 대기중",
       "사각지대에 차량이 감지되었습니다",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .1),
   },
 
   EventName.laneChange: {
     ET.WARNING: Alert(
       "차션 변경 중",
-      "",
-      AlertStatus.normal, AlertSize.small,
+      "전후방 및 측면에 유의하세요",
+      AlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
   },
 
@@ -699,10 +699,10 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.preEnableStandstill: {
     ET.PRE_ENABLE: Alert(
+      "오토홀드 대기중",
       "브레이크에서 발을 떼면 활성화됩니다",
-      "",
-      AlertStatus.normal, AlertSize.small,
-      Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1, creation_delay=1.),
+      AlertStatus.normal, AlertSize.mid,
+      Priority.MID, VisualAlert.none, AudibleAlert.none, .1, creation_delay=1.),
   },
 
   EventName.gasPressedOverride: {
@@ -767,7 +767,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventName.noGps: {
     ET.PERMANENT: Alert(
       "GPS 수신 감도 나쁨",
-      "야외에서도 해당 메세지가 계속될경우 하드웨어 결함일 수 있습니다",
+      "야외에서도 해당 메세지가 계속될 경우 하드웨어 결함일 수 있습니다",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOWER, VisualAlert.none, AudibleAlert.none, .2, creation_delay=600.)
   },
@@ -1068,9 +1068,9 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.laneChangeBlockedLoud: {
     ET.WARNING: Alert(
+      "차선 변경 대기중",
       "사각지대에 차량이 감지되었습니다",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.warningSoft, .1),
   },
 
@@ -1146,7 +1146,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.turningLeft: {
     ET.WARNING: Alert(
-      "Turning left",
+      "좌회전 진행 중",
       "",
       AlertStatus.normal, AlertSize.small,
       Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1, alert_rate=0.75),
@@ -1154,7 +1154,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.turningRight: {
     ET.WARNING: Alert(
-      "Turning right",
+      "우회전 진행 중",
       "",
       AlertStatus.normal, AlertSize.small,
       Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1, alert_rate=0.75),
