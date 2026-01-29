@@ -1160,19 +1160,19 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   # Random Events
   EventName.accel30: {
-    ET.WARNING: Alert(
-      "UwU u went a bit fast there!",
-      "(⁄ ⁄•⁄ω⁄•⁄ ⁄)",
-      AlertStatus.frogpilot, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.uwu, 4.),
+    ET.PERMANENT: Alert(
+      "전방 추돌 주의",
+      "전방 차량과 추돌 위험이 있습니다",
+      AlertStatus.critical, AlertSize.full,
+      Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.warningImmediate, 3.),
   },
 
   EventName.accel35: {
     ET.WARNING: Alert(
-      "I ain't giving you no tree-fiddy",
-      "You damn Loch Ness Monsta!",
-      AlertStatus.frogpilot, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.nessie, 4.),
+      "수동 운전으로 전환되었습니다",
+      "핸들을 잡아주세요",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.HIGH, VisualAlert.none, AudibleAlert.none, 5.),
   },
 
   EventName.accel40: {
@@ -1200,11 +1200,12 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.hal9000: {
+  EventName.hal9000: {
     ET.WARNING: Alert(
-      "I'm sorry Dave",
-      "I'm afraid I can't do that...",
-      AlertStatus.normal, AlertSize.mid,
-      Priority.HIGH, VisualAlert.none, AudibleAlert.hal9000, 4.),
+      "2시간 이상의 장시간 운전 중입니다",
+      "졸음 쉼터에서 휴식을 권장드립니다",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.MID, VisualAlert.none, AudibleAlert.prompt, 10.),
   },
 
   EventName.openpilotCrashedRandomEvent: {

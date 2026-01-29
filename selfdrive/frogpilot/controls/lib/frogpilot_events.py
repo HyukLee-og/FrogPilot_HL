@@ -38,7 +38,9 @@ class FrogPilotEvents:
 
     self.max_acceleration = 0
     self.random_event_timer = 0
+    self.op_timer = 0
     self.tracking_lead_distance = 0
+    self.openpilot_enabled_previously = False
 
   def update(self, carState, controlsState, frogpilotCarState, lead_distance, modelData, v_cruise, frogpilot_toggles):
     self.events.clear()
@@ -74,8 +76,8 @@ class FrogPilotEvents:
       if self.tracking_lead_distance == 0:
         self.tracking_lead_distance = lead_distance
 
-      lead_departing = lead_distance - self.tracking_lead_distance > 1
-      lead_departing &= self.frogpilot_planner.lead_one.vLead > 1
+      lead_departing = lead_distance - self.tracking_lead_distance > 0.5
+      lead_departing &= self.frogpilot_planner.lead_one.vLead > 0.5
 
       if lead_departing:
         self.events.add(EventName.leadDeparting)
@@ -237,3 +239,27 @@ class FrogPilotEvents:
       self.events.add(EventName.turningLeft)
     elif modelData.meta.turnDirection == Desire.turnRight:
       self.events.add(EventName.turningRight)
+
+    if self.openpilot_enabled_previously and not controlsState.enabled:
+      self.events.add(EventName.accel35)
+
+    self.openpilot_enabled_previously = controlsState.enabled
+
+    # Ignition Timer (Rest Alert)
+    # Increment timer if car is started (onroad)
+    self.op_timer += DT_MDL
+
+    # Trigger alert after 7200 seconds (2 hours)
+    # Using a 10-second buffer to prevent spamming, or just let the alert duration handle it
+    # Ideally, we want it to trigger once.
+    if 7200 <= self.op_timer < 7200 + DT_MDL:
+       self.events.add(EventName.hal9000)
+
+    # Approaching Too Fast Warning (Tailgating / FCW)
+    # vEgo > 8.33 m/s (30 kph)
+    # lead_one valid
+    # dRel < 40 m (close)
+    # vRel < -4.0 m/s (rapidly approaching)
+    if carState.vEgo > 8.33 and self.frogpilot_planner.lead_one.status:
+       if self.frogpilot_planner.lead_one.dRel < 40 and self.frogpilot_planner.lead_one.vRel < -4.0:
+          self.events.add(EventName.accel30)
