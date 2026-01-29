@@ -1200,8 +1200,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.hal9000: {
-  EventName.hal9000: {
-    ET.WARNING: Alert(
+    ET.PERMANENT: Alert(
       "2시간 이상의 장시간 운전 중입니다",
       "졸음 쉼터에서 휴식을 권장드립니다",
       AlertStatus.userPrompt, AlertSize.mid,
