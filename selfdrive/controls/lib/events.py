@@ -1168,7 +1168,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.accel35: {
-    ET.WARNING: Alert(
+    ET.PERMANENT: Alert(
       "수동 운전으로 전환되었습니다",
       "핸들을 잡아주세요",
       AlertStatus.normal, AlertSize.mid,
