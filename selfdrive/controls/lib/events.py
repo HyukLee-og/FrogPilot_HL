@@ -1076,7 +1076,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: Alert(
       "선행 차량이 출발하였습니다",
       "",
-      AlertStatus.frogpilot, AlertSize.small,
+      AlertStatus.frogpilot, AlertSize.full,
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
   },
 
