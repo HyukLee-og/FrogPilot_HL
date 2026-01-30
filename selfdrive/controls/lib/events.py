@@ -1164,7 +1164,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "전방 추돌 주의",
       "전방 차량과 추돌 위험이 있습니다",
       AlertStatus.critical, AlertSize.full,
-      Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.warningImmediate, 3.),
+      Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.prompt, 3.),
   },
 
   EventName.accel35: {
