@@ -261,5 +261,5 @@ class FrogPilotEvents:
     # dRel < 40 m (close)
     # vRel < -4.0 m/s (rapidly approaching)
     if carState.vEgo > 8.33 and self.frogpilot_planner.lead_one.status:
-       if self.frogpilot_planner.lead_one.dRel < 40 and self.frogpilot_planner.lead_one.vRel < -4.0:
+       if self.frogpilot_planner.lead_one.dRel < 30 and self.frogpilot_planner.lead_one.vRel < -5.0:
           self.events.add(EventName.accel30)
