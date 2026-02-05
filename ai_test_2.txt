@@ -1,2 +1,0 @@
-Second test file for verifying AI commit signature.
--ai
