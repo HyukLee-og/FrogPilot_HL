@@ -18,7 +18,7 @@ from openpilot.selfdrive.frogpilot.controls.lib.frogpilot_events import FrogPilo
 from openpilot.selfdrive.frogpilot.controls.lib.frogpilot_following import FrogPilotFollowing
 from openpilot.selfdrive.frogpilot.controls.lib.frogpilot_vcruise import FrogPilotVCruise
 from openpilot.selfdrive.frogpilot.frogpilot_utilities import calculate_lane_width, calculate_road_curvature
-from openpilot.selfdrive.frogpilot.frogpilot_variables import CRUISING_SPEED, PLANNER_TIME, THRESHOLD, params, update_frogpilot_toggles
+from openpilot.selfdrive.frogpilot.frogpilot_variables import CRUISING_SPEED, PLANNER_TIME, THRESHOLD, params, params_memory, update_frogpilot_toggles
 
 class FrogPilotPlanner:
   def __init__(self):
@@ -31,8 +31,8 @@ class FrogPilotPlanner:
 
     self.tracking_lead_filter = FirstOrderFilter(0, 1, DT_MDL)
 
-    self.gap_button_pressed = False
-    self.gap_button_timer = 0
+    self.cancel_button_pressed = False
+    self.cancel_button_timer = 0
 
 
     self.lateral_check = False
@@ -118,17 +118,17 @@ class FrogPilotPlanner:
 
     # AOL Button Toggle
     for e in carState.buttonEvents:
-      if e.type == car.CarState.ButtonEvent.Type.gapAdjustCruise:
-        self.gap_button_pressed = e.pressed
+      if e.type == car.CarState.ButtonEvent.Type.cancel:
+        self.cancel_button_pressed = e.pressed
 
-    if self.gap_button_pressed:
-      self.gap_button_timer += DT_MDL
-      if self.gap_button_timer >= 2.0:
-        params.put_bool("AlwaysOnLateral", not frogpilot_toggles.always_on_lateral)
+    if self.cancel_button_pressed:
+      self.cancel_button_timer += DT_MDL
+      if self.cancel_button_timer >= 2.0:
+        params_memory.put_bool("AlwaysOnLateral", not frogpilot_toggles.always_on_lateral)
         update_frogpilot_toggles()
-        self.gap_button_timer = 0
+        self.cancel_button_timer = 0
     else:
-      self.gap_button_timer = 0
+      self.cancel_button_timer = 0
 
 
   def set_lead_status(self):

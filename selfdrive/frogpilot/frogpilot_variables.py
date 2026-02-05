@@ -495,7 +495,7 @@ class FrogPilotVariables:
     toggle.warningSoft_volume = params.get_int("WarningSoftVolume") if toggle.alert_volume_control and tuning_level >= level["WarningSoftVolume"] else default.get_int("WarningSoftVolume")
     toggle.warningImmediate_volume = max(params.get_int("WarningImmediateVolume"), 25) if toggle.alert_volume_control and tuning_level >= level["WarningImmediateVolume"] else default.get_int("WarningImmediateVolume")
 
-    toggle.always_on_lateral = params.get_bool("AlwaysOnLateral") if tuning_level >= level["AlwaysOnLateral"] else default.get_bool("AlwaysOnLateral")
+    toggle.always_on_lateral = (params.get_bool("AlwaysOnLateral") if tuning_level >= level["AlwaysOnLateral"] else default.get_bool("AlwaysOnLateral")) or params_memory.get_bool("AlwaysOnLateral")
     toggle.always_on_lateral_set = toggle.always_on_lateral and always_on_lateral_set
     toggle.always_on_lateral_lkas = toggle.always_on_lateral_set and toggle.use_lkas_for_aol and (params.get_bool("AlwaysOnLateralLKAS") if tuning_level >= level["AlwaysOnLateralLKAS"] else default.get_bool("AlwaysOnLateralLKAS"))
     toggle.always_on_lateral_main = toggle.always_on_lateral_set and not toggle.use_lkas_for_aol and (params.get_bool("AlwaysOnLateralMain") if tuning_level >= level["AlwaysOnLateralMain"] else default.get_bool("AlwaysOnLateralMain"))
