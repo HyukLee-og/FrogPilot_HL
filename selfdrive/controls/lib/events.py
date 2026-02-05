@@ -414,7 +414,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.startup: {
-    ET.PERMANENT: StartupAlert("항시 전방을 주시하고 교통 상황에 유의하세요")
+    ET.PERMANENT: StartupAlert("Openpilot 활성화 가능", "항시 전방을 주시하고 교통 상황에 유의하세요"), # 원하는 문구로 변경하세요
   },
 
   EventName.startupMaster: {
@@ -489,7 +489,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "차선 이탈 감지됨",
       "",
       AlertStatus.userPrompt, AlertSize.small,
-      Priority.LOW, VisualAlert.ldw, AudibleAlert.prompt, 3.),
+      Priority.LOW, VisualAlert.ldw, AudibleAlert.warningSoft, 3.),
   },
 
   # ********** events only containing alerts that display while engaged **********
@@ -499,7 +499,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "조향 제어 불안정",
       "",
       AlertStatus.userPrompt, AlertSize.small,
-      Priority.LOW, VisualAlert.steerRequired, AudibleAlert.prompt, 1.8),
+      Priority.LOW, VisualAlert.steerRequired, AudibleAlert.warningSoft, 1.8),
   },
 
   EventName.preDriverDistracted: {
@@ -591,12 +591,12 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "차선 변경 대기중",
       "사각지대에 차량이 감지되었습니다",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .1),
+      Priority.LOW, VisualAlert.none, AudibleAlert.warningSoft, .1),
   },
 
   EventName.laneChange: {
     ET.WARNING: Alert(
-      "차션 변경 중",
+      "차선 변경 중",
       "전후방 및 측면에 유의하세요",
       AlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
@@ -607,7 +607,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "핸들을 조작해주세요",
       "조향각 한계에 도달했습니다",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.LOW, VisualAlert.steerRequired, AudibleAlert.promptRepeat, 2.),
+      Priority.LOW, VisualAlert.steerRequired, AudibleAlert.warningSoft, 2.),
   },
 
   # Thrown when the fan is driven at >50% but is not rotating
@@ -1086,14 +1086,14 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.openpilotCrashed: {
     ET.IMMEDIATE_DISABLE: Alert(
-      "openpilot crashed",
-      "Please post the 'Error Log' in the FrogPilot Discord!",
+      "오픈파일럿 시스템 오류",
+      "디스코드에 에러 로그를 제보해주세요",
       AlertStatus.normal, AlertSize.mid,
       Priority.HIGHEST, VisualAlert.none, AudibleAlert.prompt, .1),
 
     ET.NO_ENTRY: Alert(
-      "openpilot crashed",
-      "Please post the 'Error Log' in the FrogPilot Discord!",
+      "오픈파일럿 시스템 오류",
+      "디스코드에 에러 로그를 제보해주세요",
       AlertStatus.normal, AlertSize.mid,
       Priority.HIGHEST, VisualAlert.none, AudibleAlert.prompt, .1),
   },
@@ -1164,7 +1164,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "전방 추돌 주의",
       "전방 차량과 추돌 위험이 있습니다",
       AlertStatus.critical, AlertSize.full,
-      Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.prompt, 3.),
+      Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.warningSoft, 3.),
   },
 
   EventName.accel35: {
@@ -1185,10 +1185,10 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.dejaVuCurve: {
     ET.WARNING: Alert(
-      "♬♪ Deja vu! ᕕ(⌐■_■)ᕗ ♪♬",
-      "🏎️",
-      AlertStatus.frogpilot, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.dejaVu, 4.),
+      "상시 조향 비활성화",
+      "오픈파일럿이 차선을 유지하지 않습니다",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.disengage, 3.),
   },
 
   EventName.firefoxSteerSaturated: {
@@ -1209,16 +1209,17 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.openpilotCrashedRandomEvent: {
     ET.IMMEDIATE_DISABLE: Alert(
-      "openpilot crashed 💩",
-      "Please post the 'Error Log' in the FrogPilot Discord!",
+      "오픈파일럿 시스템 오류",
+      "디스코드에 에러 로그를 제보해주세요",
       AlertStatus.normal, AlertSize.mid,
-      Priority.HIGHEST, VisualAlert.none, AudibleAlert.fart, 10.),
+      Priority.HIGHEST, VisualAlert.none, AudibleAlert.prompt, 10.),
 
     ET.NO_ENTRY: Alert(
-      "openpilot crashed 💩",
-      "Please post the 'Error Log' in the FrogPilot Discord!",
+      "오픈파일럿 시스템 오류",
+      "디스코드에 에러 로그를 제보해주세요",
       AlertStatus.normal, AlertSize.mid,
-      Priority.HIGHEST, VisualAlert.none, AudibleAlert.fart, 10.),
+
+      Priority.HIGHEST, VisualAlert.none, AudibleAlert.prompt, 10.),
   },
 
   EventName.toBeContinued: {
@@ -1238,11 +1239,11 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.yourFrogTriedToKillMe: {
-    ET.PERMANENT: Alert(
-      "Your Frog tried to kill me...",
-      "👺",
-      AlertStatus.frogpilot, AlertSize.mid,
-      Priority.MID, VisualAlert.none, AudibleAlert.angry, 5.),
+    ET.WARNING: Alert(
+      "상시 조향 활성화",
+      "항시 전방을 주시하세요",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.engage, 3.),
   },
 
   EventName.youveGotMail: {

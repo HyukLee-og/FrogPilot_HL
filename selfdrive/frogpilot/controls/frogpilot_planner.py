@@ -3,7 +3,7 @@ import math
 
 import cereal.messaging as messaging
 
-from cereal import log
+from cereal import car, log
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
@@ -18,7 +18,7 @@ from openpilot.selfdrive.frogpilot.controls.lib.frogpilot_events import FrogPilo
 from openpilot.selfdrive.frogpilot.controls.lib.frogpilot_following import FrogPilotFollowing
 from openpilot.selfdrive.frogpilot.controls.lib.frogpilot_vcruise import FrogPilotVCruise
 from openpilot.selfdrive.frogpilot.frogpilot_utilities import calculate_lane_width, calculate_road_curvature
-from openpilot.selfdrive.frogpilot.frogpilot_variables import CRUISING_SPEED, PLANNER_TIME, THRESHOLD
+from openpilot.selfdrive.frogpilot.frogpilot_variables import CRUISING_SPEED, PLANNER_TIME, THRESHOLD, params, update_frogpilot_toggles
 
 class FrogPilotPlanner:
   def __init__(self):
@@ -30,6 +30,10 @@ class FrogPilotPlanner:
     self.lead_one = Lead()
 
     self.tracking_lead_filter = FirstOrderFilter(0, 1, DT_MDL)
+
+    self.gap_button_pressed = False
+    self.gap_button_timer = 0
+
 
     self.lateral_check = False
     self.model_stopped = False
@@ -111,6 +115,21 @@ class FrogPilotPlanner:
     self.tracking_lead = self.set_lead_status()
 
     self.v_cruise = self.frogpilot_vcruise.update(carState, controlsState, frogpilotCarState, frogpilotNavigation, gps_position, v_cruise, v_ego, frogpilot_toggles)
+
+    # AOL Button Toggle
+    for e in carState.buttonEvents:
+      if e.type == car.CarState.ButtonEvent.Type.gapAdjustCruise:
+        self.gap_button_pressed = e.pressed
+
+    if self.gap_button_pressed:
+      self.gap_button_timer += DT_MDL
+      if self.gap_button_timer >= 2.0:
+        params.put_bool("AlwaysOnLateral", not frogpilot_toggles.always_on_lateral)
+        update_frogpilot_toggles()
+        self.gap_button_timer = 0
+    else:
+      self.gap_button_timer = 0
+
 
   def set_lead_status(self):
     following_lead = self.lead_one.status

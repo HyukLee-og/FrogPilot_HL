@@ -134,18 +134,9 @@ class FrogPilotEvents:
         self.max_acceleration = 0
 
 
-      if not self.dejaVu_played and carState.vEgo > CRUISING_SPEED * 2 and self.frogpilot_planner.road_curvature_detected:
-        if carState.vEgo > (1 / abs(self.frogpilot_planner.road_curvature))**0.75 * 2 > CRUISING_SPEED * 2 and abs(carState.steeringAngleDeg) > 30:
-          self.events.add(EventName.dejaVuCurve)
 
-          self.dejaVu_played = True
-          self.random_event_playing = True
 
-      if not self.no_entry_alert_played and controlsState.alertType == ET.NO_ENTRY:
-        self.events.add(EventName.hal9000)
 
-        self.no_entry_alert_played = True
-        self.random_event_playing = True
 
       saturated_event_names = [EventName.steerSaturated, EventName.goatSteerSaturated]
       saturated_alert_match = any((controlsState.alertText1, controlsState.alertText2) == (EVENTS[e][ET.WARNING].alert_text_1, EVENTS[e][ET.WARNING].alert_text_2) for e in saturated_event_names)
@@ -200,27 +191,22 @@ class FrogPilotEvents:
         stock_aeb_alert_match = controlsState.alertText1 == EVENTS[EventName.stockAeb][ET.PERMANENT].alert_text_1 and controlsState.alertText2 == EVENTS[EventName.stockAeb][ET.PERMANENT].alert_text_2
         if fcw_alert_match or stock_aeb_alert_match:
           event_choices = []
-
           event_choices.append("toBeContinued")
-          event_choices.append("yourFrogTriedToKillMe")
 
           event_choice = random.choice(event_choices)
 
           if event_choice == "toBeContinued":
             self.events.add(EventName.toBeContinued)
-          elif event_choice == "yourFrogTriedToKillMe":
-            self.events.add(EventName.yourFrogTriedToKillMe)
 
           self.fcw_played = True
           self.random_event_playing = True
 
-      if not self.youveGotMail_played and frogpilotCarState.alwaysOnLateralEnabled and not self.always_on_lateral_enabled_previously:
-        if random.random() < RANDOM_EVENTS_CHANCE:
-          self.events.add(EventName.youveGotMail)
-
-          self.youveGotMail_played = True
-          self.random_event_playing = True
-      self.always_on_lateral_enabled_previously = frogpilotCarState.alwaysOnLateralEnabled
+      if frogpilotCarState.alwaysOnLateralEnabled != self.always_on_lateral_enabled_previously:
+        if frogpilotCarState.alwaysOnLateralEnabled:
+          self.events.add(EventName.yourFrogTriedToKillMe)
+        else:
+          self.events.add(EventName.dejaVuCurve)
+        self.always_on_lateral_enabled_previously = frogpilotCarState.alwaysOnLateralEnabled
 
     if frogpilot_toggles.speed_limit_changed_alert and self.frogpilot_planner.frogpilot_vcruise.slc.speed_limit_changed and self.frogpilot_planner.frogpilot_vcruise.speed_limit_timer < 1:
       self.events.add(EventName.speedLimitChanged)
@@ -252,8 +238,7 @@ class FrogPilotEvents:
     # Trigger alert after 7200 seconds (2 hours)
     # Using a 10-second buffer to prevent spamming, or just let the alert duration handle it
     # Ideally, we want it to trigger once.
-    if 7200 <= self.op_timer < 7200 + DT_MDL:
-       self.events.add(EventName.hal9000)
+
 
     # Approaching Too Fast Warning (Tailgating / FCW)
     # vEgo > 8.33 m/s (30 kph)
