@@ -69,35 +69,11 @@ def register(show_spinner=False) -> str | None:
     start_time = time.monotonic()
     while True:
       try:
-        register_token = jwt.encode({'register': True, 'exp': datetime.utcnow() + timedelta(hours=1)}, private_key, algorithm='RS256')
-        cloudlog.info("getting pilotauth")
-        resp = api_get("v2/pilotauth/", method='POST', timeout=15,
-                       imei=imei1, imei2=imei2, serial=serial, public_key=public_key, register_token=register_token)
-
-        if resp.status_code in (402, 403):
-          cloudlog.info(f"Unable to register device, got {resp.status_code}")
-          dongle_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-        else:
-          dongleauth = json.loads(resp.text)
-          dongle_id = dongleauth["dongle_id"]
-        break
-      except Exception:
-        cloudlog.exception("failed to authenticate")
-        backoff = min(backoff + 1, 15)
-        time.sleep(backoff)
-
-      if time.monotonic() - start_time > 5 and show_spinner:
-        dongle_id = UNREGISTERED_DONGLE_ID
-        break
-
-    if show_spinner:
-      spinner.close()
-
-  if dongle_id:
-    # params.put("DongleId", dongle_id)
-    # set_offroad_alert("Offroad_UnofficialHardware", (dongle_id == UNREGISTERED_DONGLE_ID) and not PC)
-    pass
-  return dongle_id
+    # Bypass registration by generating a random dongle_id
+    cloudlog.warning("Bypassing registration with fake ID")
+    dongle_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+    params.put("DongleId", dongle_id)
+    return dongle_id
 
 
 if __name__ == "__main__":
