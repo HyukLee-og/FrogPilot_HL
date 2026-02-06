@@ -123,7 +123,7 @@ class FrogPilotPlanner:
 
     if self.cancel_button_pressed:
       self.cancel_button_timer += DT_MDL
-      if self.cancel_button_timer >= 2.0:
+      if self.cancel_button_timer >= 1.0:
         params_memory.put_bool("AlwaysOnLateral", not frogpilot_toggles.always_on_lateral)
         update_frogpilot_toggles()
         self.cancel_button_timer = 0
