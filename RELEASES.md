@@ -1,3 +1,8 @@
+Version 1.6.2 (2026-02-06)
+========================
+* 기본 사운드 테마 변경 (오픈파일럿 기본 -> 테슬라 사운드)
+  * 적용: Engage, Disengage, Prompt(Distracted), Warning(Immediate/Soft)
+
 Version 1.6.1 (2026-02-05)
 ========================
 * 상시 조향 토글 상세 개선
