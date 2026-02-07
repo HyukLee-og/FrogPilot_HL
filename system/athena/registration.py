@@ -65,15 +65,12 @@ def register(show_spinner=False) -> str | None:
     params.put("IMEI", imei1)
     params.put("HardwareSerial", serial)
 
-    backoff = 0
-    start_time = time.monotonic()
-    while True:
-      try:
     # Bypass registration by generating a random dongle_id
     cloudlog.warning("Bypassing registration with fake ID")
     dongle_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
     params.put("DongleId", dongle_id)
-    return dongle_id
+
+  return dongle_id
 
 
 if __name__ == "__main__":
