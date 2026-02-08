@@ -32,6 +32,9 @@ class FrogPilotEvents:
     self.random_event_timer = 0
     self.tracked_lead_distance = 0
 
+    self.previously_engaged = False
+    self.time_driven = 0
+
     self.played_events = set()
 
     self.error_log = error_log
@@ -41,6 +44,9 @@ class FrogPilotEvents:
     current_frogpilot_alert = sm["selfdriveState"].alertType
 
     alerts_empty = all(sm[state].alertText1 == "" and sm[state].alertText2 == "" for state in ["selfdriveState", "frogpilotSelfdriveState"])
+
+    if sm["carState"].gasPressed or sm["carState"].cruiseState.enabled:
+      self.time_driven += DT_MDL
 
     self.events.clear()
 
@@ -91,7 +97,7 @@ class FrogPilotEvents:
         self.random_event_timer = 0
 
     if not self.random_event_playing and frogpilot_toggles.random_events:
-      if "accel30" not in self.played_events and 3.5 > self.max_acceleration >= 3.0 and acceleration < 1.5:
+      if "accel30" not in self.played_events and (f"{EVENT_NAME[EventName.fcw]}/" in current_alert or f"{EVENT_NAME[EventName.stockAeb]}/" in current_alert):
         self.events.add(FrogPilotEventName.accel30)
 
         self.theme_manager.update_wheel_image("accel30", random_event=True)
@@ -99,7 +105,7 @@ class FrogPilotEvents:
 
         self.max_acceleration = 0
 
-      elif "accel35" not in self.played_events and 4.0 > self.max_acceleration >= 3.5 and acceleration < 1.5:
+      elif "accel35" not in self.played_events and self.previously_engaged and not sm["carState"].cruiseState.enabled:
         self.events.add(FrogPilotEventName.accel35)
 
         self.theme_manager.update_wheel_image("accel35", random_event=True)
@@ -119,7 +125,7 @@ class FrogPilotEvents:
         if self.frogpilot_planner.lateral_acceleration >= DEJA_VU_G_FORCE * ACCELERATION_DUE_TO_GRAVITY:
           self.events.add(FrogPilotEventName.dejaVuCurve)
 
-      if "hal9000" not in self.played_events and (ET.NO_ENTRY in current_alert or ET.NO_ENTRY in current_frogpilot_alert):
+      if "hal9000" not in self.played_events and self.time_driven >= 7200:
         self.events.add(FrogPilotEventName.hal9000)
 
       if f"{EVENT_NAME[EventName.steerSaturated]}/" in current_alert or f"{FROGPILOT_EVENT_NAME[FrogPilotEventName.goatSteerSaturated]}/" in current_frogpilot_alert:
@@ -199,3 +205,4 @@ class FrogPilotEvents:
       self.events.add(FrogPilotEventName.turningRight)
 
     self.played_events.update(FROGPILOT_EVENT_NAME[event] for event in self.events.names)
+    self.previously_engaged = sm["carState"].cruiseState.enabled
