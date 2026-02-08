@@ -269,7 +269,7 @@ def below_steer_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.S
 
 
 def calibration_incomplete_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, frogpilot_toggles: SimpleNamespace) -> Alert:
-  first_word = 'Recalibration' if sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.recalibrating else 'Calibration'
+  first_word = 'Recalibrating' if sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.recalibrating else 'Calibrating'
   return Alert(
     f"캘리브레이션이 진행중입니다:{sm['liveCalibration'].calPerc:.0f}%",
     f"{get_display_speed(MIN_SPEED_FILTER, metric)}이상으로 주행하세요",
@@ -1213,7 +1213,7 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "좌회전 진행 중",
       "",
       AlertStatus.normal, AlertSize.small,
-      Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1, alert_rate=0.75),
+      Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1),
   },
 
   FrogPilotEventName.turningRight: {
@@ -1221,7 +1221,7 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "우회전 진행 중",
       "",
       AlertStatus.normal, AlertSize.small,
-      Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1, alert_rate=0.75),
+      Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .1),
   },
 
   # Random Events
@@ -1251,10 +1251,10 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   FrogPilotEventName.dejaVuCurve: {
     ET.PERMANENT: Alert(
-      "상시 조향 비활성화",
-      "오픈파일럿이 차선을 유지하지 않습니다",
-      AlertStatus.normal, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.disengage, 3.),
+      "♬♪ Deja vu! ᕕ(⌐■_■)ᕗ ♪♬",
+      "🏎️",
+      FrogPilotAlertStatus.frogpilot, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, FrogPilotAudibleAlert.dejaVu, 4.),
   },
 
   FrogPilotEventName.firefoxSteerSaturated: {
@@ -1312,10 +1312,10 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   FrogPilotEventName.yourFrogTriedToKillMe: {
     ET.PERMANENT: Alert(
-      "상시 조향 활성화",
-      "항시 전방을 주시하세요",
-      AlertStatus.normal, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.engage, 3.),
+      "Your Frog tried to kill me...",
+      "👺",
+      FrogPilotAlertStatus.frogpilot, AlertSize.mid,
+      Priority.MID, VisualAlert.none, FrogPilotAudibleAlert.angry, 5.),
   },
 
   FrogPilotEventName.youveGotMail: {
