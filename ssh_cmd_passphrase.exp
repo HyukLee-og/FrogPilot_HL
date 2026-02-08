@@ -1,0 +1,39 @@
+#!/usr/bin/expect -f
+set timeout 10
+set host "192.168.0.5"
+set user "comma"
+set password "leehyuk1108"
+set identity "~/.ssh/id_rsa"
+set cmd "mkdir -p /data/params/d && echo 1 > /data/params/d/IsDriverViewEnabled"
+
+# Try with id_rsa first
+spawn ssh -o StrictHostKeyChecking=no -i $identity $user@$host $cmd
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "Permission denied" {
+        # Fallback to openpilot_rsa if id_rsa fails
+        send_user "\nAttempting openpilot_rsa...\n"
+        spawn ssh -o StrictHostKeyChecking=no -i ~/.ssh/openpilot_rsa $user@$host $cmd
+        expect {
+            "Enter passphrase for key" {
+                send "$password\r"
+                exp_continue
+            }
+            "password:" {
+                send "$password\r"
+                exp_continue
+            }
+            eof
+        }
+    }
+    eof
+}
+catch wait result
+exit [lindex $result 3]

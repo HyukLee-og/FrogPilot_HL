@@ -31,8 +31,7 @@ class FrogPilotPlanner:
 
     self.tracking_lead_filter = FirstOrderFilter(0, 1, DT_MDL)
 
-    self.cancel_button_pressed = False
-    self.cancel_button_timer = 0
+
 
 
     self.lateral_check = False
@@ -116,19 +115,7 @@ class FrogPilotPlanner:
 
     self.v_cruise = self.frogpilot_vcruise.update(carState, controlsState, frogpilotCarState, frogpilotNavigation, gps_position, v_cruise, v_ego, frogpilot_toggles)
 
-    # AOL Button Toggle
-    for e in carState.buttonEvents:
-      if e.type == car.CarState.ButtonEvent.Type.cancel:
-        self.cancel_button_pressed = e.pressed
 
-    if self.cancel_button_pressed:
-      self.cancel_button_timer += DT_MDL
-      if self.cancel_button_timer >= 1.0:
-        params_memory.put_bool("AlwaysOnLateral", not frogpilot_toggles.always_on_lateral)
-        update_frogpilot_toggles()
-        self.cancel_button_timer = 0
-    else:
-      self.cancel_button_timer = 0
 
 
   def set_lead_status(self):

@@ -1,0 +1,17 @@
+#!/usr/bin/expect -f
+set timeout 10
+set host "192.168.0.5"
+set user "comma"
+set password "leehyuk1108"
+set cmd "mkdir -p /data/params/d && echo 1 > /data/params/d/IsDriverViewEnabled"
+
+spawn ssh -o StrictHostKeyChecking=no -o PreferredAuthentications=password,keyboard-interactive $user@$host $cmd
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    eof
+}
+catch wait result
+exit [lindex $result 3]
