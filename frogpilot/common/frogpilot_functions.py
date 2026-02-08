@@ -72,6 +72,8 @@ def frogpilot_boot_functions(build_metadata, params):
   FrogPilotVariables()
   ThemeManager(params, params_memory, boot_run=True).update_active_theme(time_validated=system_time_valid(), frogpilot_toggles=get_frogpilot_toggles(), boot_run=True)
 
+  update_boot_logo(frogpilot=True)
+
   if use_konik_server():
     if params.get("KonikDongleId") is not None:
       params.put("DongleId", params.get("KonikDongleId"))
