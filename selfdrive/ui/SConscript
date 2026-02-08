@@ -1,4 +1,5 @@
 import json
+# Force rebuild for translation updates
 Import('env', 'qt_env', 'arch', 'common', 'messaging', 'visionipc', 'transformations')
 
 base_libs = [common, messaging, visionipc, transformations,
