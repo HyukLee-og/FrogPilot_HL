@@ -1,3 +1,7 @@
+Version 1.4 (2026-02-09)
+========================
+* 차량 정보 추가
+
 Version 1.3 (2026-02-09)
 ========================
 * Fix boot loop due to invalid alert_rate parameter
