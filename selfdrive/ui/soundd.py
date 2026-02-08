@@ -124,9 +124,7 @@ class Soundd:
         if standard_path.exists():
           sounds_path = standard_path
 
-      if "engage" in filename:
-        wavefile = wave.open(BASEDIR + "/selfdrive/assets/sounds/" + filename, 'r')
-      elif random_events_path.exists():
+      if random_events_path.exists():
         wavefile = wave.open(str(random_events_path), 'r')
       elif sounds_path.exists():
         wavefile = wave.open(str(sounds_path), 'r')
