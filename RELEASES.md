@@ -1,3 +1,8 @@
+Version 1.2 (2026-02-09)
+========================
+* Skip device registration process on boot
+* Automatically generate random dongle ID if missing
+
 Version 1.1 (2026-02-09)
 ========================
 * Korean translation applied to events.py (FrogPilot)
