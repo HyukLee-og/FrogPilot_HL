@@ -1,3 +1,9 @@
+Version 1.1 (2026-02-09)
+========================
+* Korean translation applied to events.py (FrogPilot)
+* Updated various alert messages to Korean
+* Preserved original Easter egg messages for specific FrogPilot events
+
 Version 0.10.3 (2025-12-17)
 ========================
 * New driving model #36249
