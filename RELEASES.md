@@ -1,3 +1,7 @@
+Version 1.3 (2026-02-09)
+========================
+* Fix boot loop due to invalid alert_rate parameter
+
 Version 1.2 (2026-02-09)
 ========================
 * Skip device registration process on boot
