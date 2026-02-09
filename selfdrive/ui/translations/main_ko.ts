@@ -3710,7 +3710,7 @@ Want to submit your own animations? Share them in the "custom-themes" channel on
     </message>
     <message>
         <source>Waiting for controls to start</source>
-        <translation>프로세스 로드 중</translation>
+        <translation>OpenPilot 부팅중&#x0a;잠시만 기다려 주세요...</translation>
     </message>
     <message>
         <source>TAKE CONTROL IMMEDIATELY</source>
