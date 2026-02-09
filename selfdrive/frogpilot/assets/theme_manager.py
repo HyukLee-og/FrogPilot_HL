@@ -9,7 +9,6 @@ from datetime import date, timedelta
 from dateutil import easter
 from pathlib import Path
 
-from openpilot.common.basedir import BASEDIR
 from openpilot.selfdrive.frogpilot.assets.download_functions import GITLAB_URL, download_file, get_repository_url, handle_error, handle_request_error, verify_download
 from openpilot.selfdrive.frogpilot.frogpilot_utilities import delete_file, extract_zip
 from openpilot.selfdrive.frogpilot.frogpilot_variables import ACTIVE_THEME_PATH, RANDOM_EVENTS_PATH, THEME_SAVE_PATH, params, params_memory, update_frogpilot_toggles
@@ -108,36 +107,8 @@ def update_theme_asset(asset_type, theme, holiday_theme):
       shutil.rmtree(save_location)
 
   save_location.parent.mkdir(parents=True, exist_ok=True)
-
-  if asset_type == "sounds":
-    if save_location.exists():
-      if save_location.is_symlink():
-        save_location.unlink()
-      elif save_location.is_dir():
-        shutil.rmtree(save_location)
-    save_location.mkdir(parents=True, exist_ok=True)
-
-    for sound_file in asset_location.iterdir():
-      if sound_file.is_file():
-        (save_location / sound_file.name).symlink_to(sound_file)
-
-    downloaded_themes_path = Path(BASEDIR) / "downloaded_themes"
-    if (downloaded_themes_path / "engage4.wav").is_file():
-      if (save_location / "engage.wav").exists():
-        (save_location / "engage.wav").unlink()
-      (save_location / "engage.wav").symlink_to(downloaded_themes_path / "engage4.wav")
-      print(f"Overriding engage.wav with {downloaded_themes_path / 'engage4.wav'}")
-
-    if (downloaded_themes_path / "disengage4.wav").is_file():
-      if (save_location / "disengage.wav").exists():
-        (save_location / "disengage.wav").unlink()
-      (save_location / "disengage.wav").symlink_to(downloaded_themes_path / "disengage4.wav")
-      print(f"Overriding disengage.wav with {downloaded_themes_path / 'disengage4.wav'}")
-
-    print(f"Created sound theme directory at {save_location}")
-  else:
-    save_location.symlink_to(asset_location, target_is_directory=True)
-    print(f"Linked {save_location} to {asset_location}")
+  save_location.symlink_to(asset_location, target_is_directory=True)
+  print(f"Linked {save_location} to {asset_location}")
 
 def update_wheel_image(image, holiday_theme="stock", random_event=True):
   wheel_save_location = ACTIVE_THEME_PATH / "steering_wheel"
