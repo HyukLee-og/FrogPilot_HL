@@ -334,6 +334,16 @@ def custom_startup_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
   return StartupAlert(frogpilot_toggles.startup_alert_top, frogpilot_toggles.startup_alert_bottom, alert_status=AlertStatus.frogpilot)
 
 
+def standstill_disable_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
+  if CS.vEgo < 0.1:  # 정지 상태 (0.1 m/s 이하)
+    return Alert(
+      "오토홀드 해제됨",
+      "",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.MID, VisualAlert.none, AudibleAlert.disengage, 2.)
+  return EngagementAlert(AudibleAlert.disengage)
+
+
 def forcing_stop_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
   model_length = sm['frogpilotPlan'].forcingStopLength
   model_length_msg = f"{model_length:.1f} meters" if metric else f"{model_length * CV.METER_TO_FOOT:.1f} feet"
@@ -392,6 +402,7 @@ def torque_nn_load_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
     return Alert(
       "NNFF 토크 컨트롤러 로드됨",
       "인공 신경망 기반 모델이 차량을 제어합니다",
+      AlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.engage, 5.0)
 
 
@@ -663,18 +674,20 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.pcmEnable: {
     ET.ENABLE: EngagementAlert(AudibleAlert.engage),
+    ET.PERMANENT: NormalPermanentAlert("OpenPilot 작동중", "항시 전방을 주시하고 교통 상황에 유의하세요", priority=Priority.LOWEST),
   },
 
   EventName.buttonEnable: {
     ET.ENABLE: EngagementAlert(AudibleAlert.engage),
+    ET.PERMANENT: NormalPermanentAlert("OpenPilot 작동중", "항시 전방을 주시하고 교통 상황에 유의하세요", priority=Priority.LOWEST),
   },
 
   EventName.pcmDisable: {
-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    ET.USER_DISABLE: standstill_disable_alert,
   },
 
   EventName.buttonCancel: {
-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    ET.USER_DISABLE: standstill_disable_alert,
     ET.NO_ENTRY: NoEntryAlert("Cancel Pressed"),
   },
 
