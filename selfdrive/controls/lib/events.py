@@ -205,7 +205,7 @@ class StartupAlert(Alert):
 def get_display_speed(speed_ms: float, metric: bool) -> str:
   speed = int(round(speed_ms * (CV.MS_TO_KPH if metric else CV.MS_TO_MPH)))
   unit = 'km/h' if metric else 'mph'
-  return f"{speed} {unit}"
+  return f"{speed}{unit}"
 
 
 # ********** alert callback functions **********
@@ -240,7 +240,7 @@ def below_engage_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.
 
 def below_steer_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
   return Alert(
-    f"조향 비활성화({get_display_speed(CP.minSteerSpeed, metric)}이하)",
+    f"조향 비활성화({get_display_speed(CP.minSteerSpeed,metric)}이하)",
     "",
     AlertStatus.normal, AlertSize.full,
     Priority.LOW, VisualAlert.none, AudibleAlert.none, 0.4)
@@ -1181,8 +1181,8 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.accel35: {
     ET.PERMANENT: Alert(
+      "Openpilot 해제됨",
       "수동 운전으로 전환되었습니다",
-      "핸들을 잡아주세요",
       AlertStatus.normal, AlertSize.mid,
       Priority.HIGH, VisualAlert.none, AudibleAlert.none, 5.),
   },
