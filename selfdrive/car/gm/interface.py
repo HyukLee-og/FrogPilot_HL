@@ -149,7 +149,7 @@ class CarInterface(CarInterfaceBase):
       ret.openpilotLongitudinalControl = not disable_openpilot_long
       ret.networkLocation = NetworkLocation.gateway
       ret.radarUnavailable = RADAR_HEADER_MSG not in fingerprint[CanBus.OBSTACLE] and not docs
-      ret.pcmCruise = False  # stock non-adaptive cruise control is kept off
+      ret.pcmCruise = not ret.openpilotLongitudinalControl  # stock non-adaptive cruise control is kept off if OP long is enabled
       # supports stop and go, but initial engage must (conservatively) be above 18mph
       ret.minEnableSpeed = 18 * CV.MPH_TO_MS
       ret.minSteerSpeed = 7 * CV.MPH_TO_MS
