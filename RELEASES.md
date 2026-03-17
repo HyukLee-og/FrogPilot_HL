@@ -19,6 +19,8 @@ Version testing-v1 custom patch (2026-03-18)
   * Disabled automatic shutdown in power monitoring for this build
   * Improved UTM host preview behavior, offroad preview flow, and simulator support for UI iteration
   * Included manager/UI-side fixes needed for reliable local preview and device deployment
+* Packaging
+  * Checked in the current compiled device UI binary for this testing-v1 customization set
 
 Version 0.10.3 (2025-12-17)
 ========================
