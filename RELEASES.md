@@ -5,6 +5,7 @@ Version testing-v1 custom patch (2026-03-18)
   * Added disengaged grayscale camera treatment with a gray path visualization
   * Removed the fullscreen left-edge border artifact and hid the onroad screen recording button
   * Cleaned up FrogPilot speed limit and border overlay behavior for the current layout
+  * Added edge-mounted blindspot warning icons with matching turn-signal blink behavior and improved UTM onroad preview positioning
 * Offroad UI refresh
   * Replaced the default offroad home with a black greeting screen and a round settings button
   * Added a recent drive summary mode after onroad ends with drive time, distance, and openpilot usage rate

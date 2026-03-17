@@ -63,6 +63,7 @@ private:
   void paintCompass(QPainter &p);
   void paintCurveSpeedControl(QPainter &p);
   void paintCurveSpeedControlTraining(QPainter &p);
+  void paintBlindspotIcons(QPainter &p);
   void paintLateralPaused(QPainter &p);
   void paintLongitudinalPaused(QPainter &p);
   void paintPedalIcons(QPainter &p);
@@ -133,6 +134,8 @@ private:
   QElapsedTimer standstillTimer;
 
   QPixmap brakePedalImg;
+  QPixmap blindspotLeftImg;
+  QPixmap blindspotRightImg;
   QPixmap curveSpeedIcon;
   QPixmap curveSpeedIconFlipped;
   QPixmap dashboardIcon;

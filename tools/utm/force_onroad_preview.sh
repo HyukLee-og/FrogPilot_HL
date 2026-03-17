@@ -82,6 +82,23 @@ PY
 
 sleep 2
 
+# UTM preview can race with background processes that briefly flip ForceOnroad
+# back off. Reassert it for a short window so the host UI reliably reaches the
+# onroad scene.
+(
+  export PYTHONPATH="$REPO_ROOT"
+  for _ in $(seq 1 20); do
+    "$VENV_PY" - <<'PY'
+from openpilot.common.params import Params
+
+p = Params()
+p.put_bool("ForceOffroad", False)
+p.put_bool("ForceOnroad", True)
+PY
+    sleep 0.5
+  done
+) >/tmp/force_onroad_refresh.log 2>&1 &
+
 UI_ENV=(
   DISPLAY="$DISPLAY_NAME"
   XDG_RUNTIME_DIR="$RUNTIME_DIR"

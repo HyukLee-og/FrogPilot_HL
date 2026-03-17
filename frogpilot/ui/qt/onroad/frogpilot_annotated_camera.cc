@@ -1,5 +1,6 @@
 #include "frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h"
 
+#include <QDateTime>
 #include <QPainterPath>
 
 FrogPilotAnnotatedCameraWidget::FrogPilotAnnotatedCameraWidget(QWidget *parent) : QWidget(parent) {
@@ -8,6 +9,8 @@ FrogPilotAnnotatedCameraWidget::FrogPilotAnnotatedCameraWidget(QWidget *parent) 
   QSize iconSize(img_size / 4, img_size / 4);
 
   brakePedalImg = loadPixmap("../../frogpilot/assets/other_images/brake_pedal.png", {btn_size, btn_size});
+  blindspotLeftImg = loadPixmap("../../files/icons/blindspot_left.png", {196, 224});
+  blindspotRightImg = loadPixmap("../../files/icons/blindspot_right.png", {196, 224});
   curveSpeedIcon = loadPixmap("../../frogpilot/assets/other_images/curve_speed.png", {btn_size, btn_size});
   curveSpeedIconFlipped = curveSpeedIcon.transformed(QTransform().scale(-1, 1));
   dashboardIcon = loadPixmap("../../frogpilot/assets/other_images/dashboard_icon.png", {btn_size / 2, btn_size / 2}).scaled(iconSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -320,6 +323,8 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
   if (!hideBottomIcons) {
     paintWeather(p);
   }
+
+  paintBlindspotIcons(p);
 }
 
 void FrogPilotAnnotatedCameraWidget::paintAdjacentPaths(QPainter &p) {
@@ -393,6 +398,49 @@ void FrogPilotAnnotatedCameraWidget::paintBlindSpotPath(QPainter &p) {
   }
   if (track_adjacent_vertices[1].boundingRect().width() > 0 && blindspotRight) {
     p.drawPolygon(track_adjacent_vertices[1]);
+  }
+
+  p.restore();
+}
+
+void FrogPilotAnnotatedCameraWidget::paintBlindspotIcons(QPainter &p) {
+  const QString preview = qEnvironmentVariable("BLINDSPOT_PREVIEW").trimmed().toLower();
+  const bool preview_left = preview == "1" || preview.contains("left") || preview.contains("both");
+  const bool preview_right = preview == "1" || preview.contains("right") || preview.contains("both");
+  const bool preview_blink_left = preview.contains("left-blink") || preview.contains("both-blink");
+  const bool preview_blink_right = preview.contains("right-blink") || preview.contains("both-blink");
+
+  const bool show_left = blindspotLeft || preview_left;
+  const bool show_right = blindspotRight || preview_right;
+  if (!show_left && !show_right) return;
+
+  const bool blink_left = (blindspotLeft && blinkerLeft) || preview_blink_left;
+  const bool blink_right = (blindspotRight && blinkerRight) || preview_blink_right;
+  const bool blink_visible = ((QDateTime::currentMSecsSinceEpoch() / 120) % 2) == 0;
+
+  const int left_margin = 44;
+  const int right_margin = 40;
+  QWidget *anchor = window();
+  if (anchor == nullptr) {
+    anchor = this;
+  }
+
+  const QPoint top_left_in_anchor = (anchor == this) ? QPoint(0, 0) : mapTo(anchor, QPoint(0, 0));
+  const int anchor_height = anchor->height();
+  const int anchor_width = anchor->width();
+  const int y = (anchor_height / 2) - 180 - top_left_in_anchor.y();
+
+  p.save();
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+  if (show_left && (!blink_left || blink_visible) && !blindspotLeftImg.isNull()) {
+    const int x = left_margin - top_left_in_anchor.x();
+    p.drawPixmap(x, y, blindspotLeftImg);
+  }
+
+  if (show_right && (!blink_right || blink_visible) && !blindspotRightImg.isNull()) {
+    const int x = anchor_width - right_margin - blindspotRightImg.width() - top_left_in_anchor.x();
+    p.drawPixmap(x, y, blindspotRightImg);
   }
 
   p.restore();
