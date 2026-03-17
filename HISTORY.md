@@ -103,6 +103,13 @@ This work ended up covering three areas:
 - Added chip-style alert helper drawing.
 - Added state tracking for engageable/enabled state.
 - Added a `ForceOnroad` fallback in alert logic so UTM preview would not trip the "waiting for start" / missing selfdriveState behavior.
+- Later, the event card itself was redesigned again in a simpler direction:
+  - floating dark card instead of a giant solid warning slab
+  - thin severity accent line
+  - small badge label (`NOTICE`, `ATTENTION`, `TAKE OVER`, `SYSTEM`)
+  - stronger title/body typography hierarchy
+  - simpler bottom-sheet layout with soft border/shadow treatment
+- For UTM testing, an existing `openpilot crashed` event was previewed by creating `/data/error_logs/error.txt`.
 - Files:
   - `selfdrive/ui/qt/onroad/alerts.cc`
   - `selfdrive/ui/qt/onroad/alerts.h`
@@ -269,6 +276,7 @@ This is the current local diff footprint and why each file matters.
   - Python fallback `MAX` -> `SET`
 - `selfdrive/ui/qt/onroad/alerts.cc`
   - alert redraw behavior, chips, `ForceOnroad` fallback
+  - simplified floating event-card redesign
 - `selfdrive/ui/qt/onroad/alerts.h`
   - alert state storage support for the redraw changes
 - `selfdrive/ui/qt/onroad/annotated_camera.cc`
