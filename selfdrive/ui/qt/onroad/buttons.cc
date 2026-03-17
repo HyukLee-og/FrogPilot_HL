@@ -4,17 +4,38 @@
 
 #include "selfdrive/ui/qt/util.h"
 
-void drawIcon(QPainter &p, const QPoint &center, const QPixmap &img, const QBrush &bg, float opacity, const int &angle) {
+namespace {
+QPixmap tintedPixmap(const QPixmap &img, const QColor &tint) {
+  if (!tint.isValid() || img.isNull()) return img;
+
+  QPixmap tinted(img.size());
+  tinted.fill(Qt::transparent);
+
+  QPainter painter(&tinted);
+  painter.drawPixmap(0, 0, img);
+  painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+  painter.fillRect(tinted.rect(), tint);
+  painter.end();
+
+  return tinted;
+}
+}  // namespace
+
+void drawIcon(QPainter &p, const QPoint &center, const QPixmap &img, const QBrush &bg, float opacity, const int &angle,
+              bool draw_bg, const QColor &tint) {
   p.setRenderHint(QPainter::Antialiasing);
-  p.setOpacity(1.0);  // bg dictates opacity of ellipse
-  p.setPen(Qt::NoPen);
-  p.setBrush(bg);
-  p.drawEllipse(center, btn_size / 2, btn_size / 2);
+  if (draw_bg) {
+    p.setOpacity(1.0);
+    p.setPen(Qt::NoPen);
+    p.setBrush(bg);
+    p.drawEllipse(center, btn_size / 2, btn_size / 2);
+  }
   p.save();
   p.translate(center);
   p.rotate(angle);
   p.setOpacity(opacity);
-  p.drawPixmap(-QPoint(img.width() / 2, img.height() / 2), img);
+  QPixmap pixmap = tintedPixmap(img, tint);
+  p.drawPixmap(-QPoint(pixmap.width() / 2, pixmap.height() / 2), pixmap);
   p.restore();
   p.setOpacity(1.0);
 }
@@ -48,8 +69,10 @@ void ExperimentalButton::changeMode() {
 void ExperimentalButton::updateState(const UIState &s, const FrogPilotUIState &fs) {
   const auto cs = (*s.sm)["selfdriveState"].getSelfdriveState();
   bool eng = cs.getEngageable() || cs.getEnabled() || fs.frogpilot_scene.always_on_lateral_active;
-  if ((cs.getExperimentalMode() != experimental_mode) || (eng != engageable)) {
+  bool is_enabled = cs.getEnabled();
+  if ((cs.getExperimentalMode() != experimental_mode) || (eng != engageable) || (is_enabled != enabled)) {
     engageable = eng;
+    enabled = is_enabled;
     experimental_mode = cs.getExperimentalMode();
     update();
   }
@@ -78,13 +101,18 @@ void ExperimentalButton::paintEvent(QPaintEvent *event) {
   p.setClipRegion(QRegion(QRect(0, 0, btn_size, btn_size), QRegion::Ellipse));
   p.setRenderHint(QPainter::Antialiasing);
 
+  QColor tint;
+  if (enabled && frogpilot_toggles.value("wheel_image").toString() == "stock") {
+    tint = QColor(0x49, 0xD2, 0x83);
+  }
+
   if (frogpilot_toggles.value("wheel_image").toString() == "stock") {
     QPixmap img = experimental_mode ? experimental_img : engage_img;
-    drawIcon(p, QPoint(btn_size / 2, btn_size / 2), img, background_color, (isDown() || !engageable) ? 0.6 : 1.0, steering_angle_deg);
+    drawIcon(p, QPoint(btn_size / 2, btn_size / 2), img, background_color, (isDown() || !engageable) ? 0.6 : 1.0, steering_angle_deg, false, tint);
   } else if (wheel_gif) {
-    drawIcon(p, QPoint(btn_size / 2, btn_size / 2), wheel_gif->currentPixmap(), background_color, (isDown() || !engageable) ? 0.6 : 1.0, steering_angle_deg);
+    drawIcon(p, QPoint(btn_size / 2, btn_size / 2), wheel_gif->currentPixmap(), background_color, (isDown() || !engageable) ? 0.6 : 1.0, steering_angle_deg, false);
   } else if (!wheel_img.isNull()) {
-    drawIcon(p, QPoint(btn_size / 2, btn_size / 2), wheel_img, background_color, (isDown() || !engageable) ? 0.6 : 1.0, steering_angle_deg);
+    drawIcon(p, QPoint(btn_size / 2, btn_size / 2), wheel_img, background_color, (isDown() || !engageable) ? 0.6 : 1.0, steering_angle_deg, false);
   }
 }
 

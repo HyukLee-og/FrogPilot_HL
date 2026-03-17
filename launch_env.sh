@@ -15,6 +15,12 @@ export VECLIB_MAXIMUM_THREADS=1
 # headroom for this until ui is moved to the CPU.
 export QCOM_PRIORITY=12
 
+OPENPILOT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_LIBYUV_DIR="$OPENPILOT_ROOT/third_party/libyuv/larch64/lib"
+if [ -d "$LOCAL_LIBYUV_DIR" ]; then
+  export LD_LIBRARY_PATH="${LOCAL_LIBYUV_DIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
 if [ -z "$AGNOS_VERSION" ]; then
   export AGNOS_VERSION="12.8"
 fi

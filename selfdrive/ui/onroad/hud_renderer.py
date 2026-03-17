@@ -125,7 +125,7 @@ class HudRenderer(Widget):
     return self._exp_button.is_pressed
 
   def _draw_set_speed(self, rect: rl.Rectangle) -> None:
-    """Draw the MAX speed indicator box."""
+    """Draw the SET speed indicator box."""
     set_speed_width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
     x = rect.x + 60 + (UI_CONFIG.set_speed_width_imperial - set_speed_width) // 2
     y = rect.y + 45
@@ -134,26 +134,26 @@ class HudRenderer(Widget):
     rl.draw_rectangle_rounded(set_speed_rect, 0.35, 10, COLORS.BLACK_TRANSLUCENT)
     rl.draw_rectangle_rounded_lines_ex(set_speed_rect, 0.35, 10, 6, COLORS.BORDER_TRANSLUCENT)
 
-    max_color = COLORS.GREY
+    label_color = COLORS.GREY
     set_speed_color = COLORS.DARK_GREY
     if self.is_cruise_set:
       set_speed_color = COLORS.WHITE
       if ui_state.status == UIStatus.ENGAGED:
-        max_color = COLORS.ENGAGED
+        label_color = COLORS.ENGAGED
       elif ui_state.status == UIStatus.DISENGAGED:
-        max_color = COLORS.DISENGAGED
+        label_color = COLORS.DISENGAGED
       elif ui_state.status == UIStatus.OVERRIDE:
-        max_color = COLORS.OVERRIDE
+        label_color = COLORS.OVERRIDE
 
-    max_text = tr("MAX")
-    max_text_width = measure_text_cached(self._font_semi_bold, max_text, FONT_SIZES.max_speed).x
+    label_text = tr("SET")
+    label_text_width = measure_text_cached(self._font_semi_bold, label_text, FONT_SIZES.max_speed).x
     rl.draw_text_ex(
       self._font_semi_bold,
-      max_text,
-      rl.Vector2(x + (set_speed_width - max_text_width) / 2, y + 27),
+      label_text,
+      rl.Vector2(x + (set_speed_width - label_text_width) / 2, y + 27),
       FONT_SIZES.max_speed,
       0,
-      max_color,
+      label_color,
     )
 
     set_speed_text = CRUISE_DISABLED_CHAR if not self.is_cruise_set else str(round(self.set_speed))

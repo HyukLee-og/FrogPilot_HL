@@ -1,5 +1,7 @@
 #include "frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h"
 
+#include <QPainterPath>
+
 FrogPilotAnnotatedCameraWidget::FrogPilotAnnotatedCameraWidget(QWidget *parent) : QWidget(parent) {
   animationTimer = new QTimer(this);
 
@@ -137,6 +139,11 @@ void FrogPilotAnnotatedCameraWidget::updateState(const UIState &s, const FrogPil
   const cereal::MapdOut::Reader &mapdOut = fpsm["mapdOut"].getMapdOut();
   const cereal::ModelDataV2::Reader &modelV2 = sm["modelV2"].getModelV2();
   const cereal::SelfdriveState::Reader &selfdriveState = sm["selfdriveState"].getSelfdriveState();
+
+  // Keep the SET-speed area compact by disabling the speed-limit widgets.
+  speedLimitHeight = 0;
+  speedLimitRect = QRect();
+  newSpeedLimitRect = QRect();
 
   if (scene.is_metric || frogpilot_toggles.value("use_si_metrics").toBool()) {
     leadDistanceUnit = tr(" meters");
@@ -290,27 +297,12 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
     paintPedalIcons(p);
   }
 
-  if (speedLimitChanged) {
-    paintPendingSpeedLimit(p);
-  }
-
   if (frogpilot_toggles.value("radar_tracks").toBool()) {
     paintRadarTracks(p);
   }
 
   if (frogpilot_toggles.value("road_name_ui").toBool()) {
     paintRoadName(p);
-  }
-
-  bool hideSpeedLimit = !speedLimitChanged && frogpilot_toggles.value("hide_speed_limit").toBool();
-  if (!hideSpeedLimit && (frogpilot_toggles.value("show_speed_limits").toBool() || frogpilot_toggles.value("speed_limit_controller").toBool())) {
-    paintSpeedLimit(p);
-  } else {
-    speedLimitHeight = 0;
-  }
-
-  if (frogpilot_toggles.value("speed_limit_sources").toBool()) {
-    paintSpeedLimitSources(p);
   }
 
   if (standstillDuration != 0) {

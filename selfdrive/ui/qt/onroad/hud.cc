@@ -59,56 +59,71 @@ void HudRenderer::draw(QPainter &p, const QRect &surface_rect) {
 }
 
 void HudRenderer::drawSetSpeed(QPainter &p, const QRect &surface_rect) {
-  // Draw outer box + border to contain set speed
   const QSize default_size = {172, 204};
-  QSize set_speed_size = is_metric ? QSize(200, 204) : default_size;
-
-  // FrogPilot variables
+  QSize set_speed_size = default_size;
   if (frogpilot_nvg->speedLimitHeight != 0) {
     set_speed_size.rheight() += frogpilot_nvg->speedLimitHeight;
-    if (frogpilot_toggles.value("speed_limit_vienna").toBool()) {
-      set_speed_size.rwidth() = 200;
-    }
   }
 
-  QRect set_speed_rect(QPoint(60 + (default_size.width() - set_speed_size.width()) / 2, 45), set_speed_size);
+  QRect set_speed_rect(QPoint(60, 45), set_speed_size);
 
   if (!frogpilot_toggles.value("hide_max_speed").toBool()) {
-    // Draw set speed box
-    p.setPen(QPen(QColor(255, 255, 255, 75), 6));
-    p.setBrush(QColor(0, 0, 0, 166));
-    p.drawRoundedRect(set_speed_rect, 32, 32);
+    QString set_speed_str = is_cruise_set ? QString::number(std::nearbyint(set_speed)) : "–";
+    QFont value_font = InterFont(52, QFont::Bold);
+    QFont label_font = InterFont(20, QFont::DemiBold);
+    label_font.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
 
-    // Colors based on status
-    QColor max_color = QColor(0xa6, 0xa6, 0xa6, 0xff);
-    QColor set_speed_color = QColor(0x72, 0x72, 0x72, 0xff);
+    QRect current_speed_rect = QFontMetrics(InterFont(176, QFont::Bold)).boundingRect(QString::number(std::nearbyint(speed)));
+    int speed_center_x = surface_rect.center().x();
+    int set_speed_x = speed_center_x + (current_speed_rect.width() / 2) + 34;
+    int set_speed_y = 132;
+    int label_width = QFontMetrics(label_font).horizontalAdvance(tr("SET"));
+    int value_width = QFontMetrics(value_font).horizontalAdvance(set_speed_str);
+    int content_width = std::max(label_width, value_width);
+
+    set_speed_rect = QRect(set_speed_x, set_speed_y, std::max(72, content_width + 8), 78);
+
+    QColor label_color = QColor(0xA5, 0xAE, 0xB8, 0xFF);
+    QColor value_color = QColor(0x75, 0x7D, 0x88, 0xFF);
+    QColor accent_color = QColor(0x7F, 0x87, 0x91, 0xFF);
     if (is_cruise_set) {
-      set_speed_color = QColor(255, 255, 255);
-      if (status == STATUS_DISENGAGED) {
-        max_color = QColor(255, 255, 255);
+      value_color = QColor(255, 255, 255, 0xFF);
+      if (status == STATUS_ENGAGED || status == STATUS_ALWAYS_ON_LATERAL_ACTIVE || status == STATUS_TRAFFIC_MODE_ENABLED) {
+        label_color = QColor(0x49, 0xD2, 0x83, 0xFF);
+        accent_color = QColor(0x49, 0xD2, 0x83, 0xFF);
       } else if (status == STATUS_OVERRIDE) {
-        max_color = QColor(0x91, 0x9b, 0x95, 0xff);
+        label_color = QColor(0xC2, 0xCB, 0xC6, 0xFF);
+        accent_color = QColor(0xB8, 0xC2, 0xBC, 0xFF);
       } else {
-        max_color = QColor(0x80, 0xd8, 0xa6, 0xff);
+        label_color = QColor(0xE8, 0xEB, 0xEF, 0xFF);
+        accent_color = QColor(0xD4, 0xDA, 0xE1, 0xFF);
       }
     }
 
-    // Draw "MAX" text
-    p.setFont(InterFont(40, QFont::DemiBold));
-    p.setPen(max_color);
-    p.drawText(set_speed_rect.adjusted(0, 27, 0, 0), Qt::AlignTop | Qt::AlignHCenter, tr("MAX"));
+    p.setPen(Qt::NoPen);
+    QRect accent_rect(set_speed_rect.x() + 5, set_speed_rect.y() + 10, 8, 8);
+    p.setBrush(accent_color);
+    p.drawEllipse(accent_rect);
 
-    // Draw set speed
-    QString setSpeedStr = is_cruise_set ? QString::number(std::nearbyint(set_speed)) : "–";
-    p.setFont(InterFont(90, QFont::Bold));
-    p.setPen(set_speed_color);
-    p.drawText(set_speed_rect.adjusted(0, 77, 0, 0), Qt::AlignTop | Qt::AlignHCenter, setSpeedStr);
+    p.setFont(label_font);
+    p.setPen(label_color);
+    p.drawText(set_speed_rect.adjusted(10, 0, 6, 0), Qt::AlignHCenter | Qt::AlignTop, tr("SET"));
+
+    p.setFont(value_font);
+    p.setPen(value_color);
+    p.drawText(set_speed_rect.adjusted(0, 18, 0, 0), Qt::AlignHCenter | Qt::AlignBottom, set_speed_str);
   }
 
-  // FrogPilot variables
+  QRect set_speed_layout_rect = set_speed_rect;
+  if (frogpilot_nvg->speedLimitHeight != 0) {
+    // Keep the visible SET card compact, but give FrogPilot's speed-limit widget
+    // the vertical space it still expects beneath the card.
+    set_speed_layout_rect.setHeight(set_speed_rect.height() + frogpilot_nvg->speedLimitHeight + 12);
+  }
+
   frogpilot_nvg->defaultSize = default_size;
   frogpilot_nvg->isCruiseSet = is_cruise_set;
-  frogpilot_nvg->setSpeedRect = set_speed_rect;
+  frogpilot_nvg->setSpeedRect = set_speed_layout_rect;
   frogpilot_nvg->speed = speed;
 }
 

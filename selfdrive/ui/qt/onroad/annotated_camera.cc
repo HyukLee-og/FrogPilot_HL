@@ -29,14 +29,12 @@ AnnotatedCameraWidget::AnnotatedCameraWidget(VisionStreamType type, QWidget *par
 }
 
 void AnnotatedCameraWidget::updateState(const UIState &s, const FrogPilotUIState &fs) {
+  const bool camera_dimmed = s.scene.started && s.status == STATUS_DISENGAGED;
+  setFrameFilter(camera_dimmed ? 1.0f : 0.0f, camera_dimmed ? 0.62f : 1.0f);
+
   // update engageability/experimental mode button
   experimental_btn->updateState(s, fs);
   dmon.updateState(s);
-
-  // FrogPilot variables
-  const SubMaster &sm = *(s.sm);
-
-  const cereal::CarState::Reader &carState = sm["carState"].getCarState();
 
   frogpilot_nvg->experimentalButtonPosition = QPoint(experimental_btn->x(), experimental_btn->y());
 
@@ -49,8 +47,7 @@ void AnnotatedCameraWidget::updateState(const UIState &s, const FrogPilotUIState
 
   dmon.onroad_distance_btn_enabled = onroad_distance_btn_enabled;
 
-  screen_recorder->move(experimental_btn->x() - UI_BORDER_SIZE - btn_size, experimental_btn->y());
-  screen_recorder->setVisible(frogpilot_nvg->standstillDuration == 0 && !(frogpilot_nvg->signalStyle == "static" && carState.getRightBlinker()) && frogpilot_toggles.value("screen_recorder").toBool());
+  screen_recorder->setVisible(false);
 }
 
 void AnnotatedCameraWidget::initializeGL() {

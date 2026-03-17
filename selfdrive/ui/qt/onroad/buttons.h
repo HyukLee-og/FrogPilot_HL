@@ -28,6 +28,7 @@ private:
   QPixmap experimental_img;
   bool experimental_mode;
   bool engageable;
+  bool enabled = false;
 
   // FrogPilot variables
   void showEvent(QShowEvent *event) override;
@@ -45,4 +46,5 @@ private:
   QSharedPointer<QMovie> wheel_gif;
 };
 
-void drawIcon(QPainter &p, const QPoint &center, const QPixmap &img, const QBrush &bg, float opacity, const int &angle = 0);
+void drawIcon(QPainter &p, const QPoint &center, const QPixmap &img, const QBrush &bg, float opacity,
+              const int &angle = 0, bool draw_bg = true, const QColor &tint = QColor());

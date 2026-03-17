@@ -63,13 +63,8 @@ class AugmentedRoadView(CameraView):
     # Update calibration before rendering
     self._update_calibration()
 
-    # Create inner content area with border padding
-    self._content_rect = rl.Rectangle(
-      rect.x + UI_BORDER_SIZE,
-      rect.y + UI_BORDER_SIZE,
-      rect.width - 2 * UI_BORDER_SIZE,
-      rect.height - 2 * UI_BORDER_SIZE,
-    )
+    # Render the onroad scene edge-to-edge without a status border.
+    self._content_rect = rect
 
     # Enable scissor mode to clip all rendering within content rectangle boundaries
     # This creates a rendering viewport that prevents graphics from drawing outside the border
@@ -94,9 +89,6 @@ class AugmentedRoadView(CameraView):
 
     # End clipping region
     rl.end_scissor_mode()
-
-    # Draw colored border based on driving state
-    self._draw_border(rect)
 
     # publish uiDebug
     msg = messaging.new_message('uiDebug')

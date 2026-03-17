@@ -14,6 +14,11 @@
 #define BACKLIGHT_DT 0.05
 #define BACKLIGHT_TS 10.00
 
+constexpr float AUTO_BRIGHTNESS_MIN = 1.0f;
+constexpr float AUTO_BRIGHTNESS_MAX = 100.0f;
+constexpr float AUTO_BRIGHTNESS_EXPOSURE_MAX = 100.0f;
+constexpr float AUTO_BRIGHTNESS_EXPOSURE_GAMMA = 0.8f;
+
 static void update_sockets(UIState *s) {
   s->sm->update(0);
 }
@@ -54,8 +59,10 @@ static void update_state(UIState *s, FrogPilotUIState *fs) {
   }
   if (sm.updated("wideRoadCameraState")) {
     auto cam_state = sm["wideRoadCameraState"].getWideRoadCameraState();
-    float scale = (cam_state.getSensor() == cereal::FrameData::ImageSensor::AR0231) ? 6.0f : 1.0f;
-    scene.light_sensor = std::max(100.0f - scale * cam_state.getExposureValPercent(), 0.0f);
+    float exposure = std::clamp(cam_state.getExposureValPercent(), 0.0f, AUTO_BRIGHTNESS_EXPOSURE_MAX);
+    float normalized_exposure = exposure / AUTO_BRIGHTNESS_EXPOSURE_MAX;
+    float normalized_light = std::pow(1.0f - normalized_exposure, AUTO_BRIGHTNESS_EXPOSURE_GAMMA);
+    scene.light_sensor = AUTO_BRIGHTNESS_MAX * normalized_light;
   } else if (!sm.allAliveAndValid({"wideRoadCameraState"})) {
     scene.light_sensor = -1;
   }
@@ -63,6 +70,8 @@ static void update_state(UIState *s, FrogPilotUIState *fs) {
 
   auto params = Params();
   scene.recording_audio = params.getBool("RecordAudio") && scene.started;
+  const bool force_onroad_param = params.getBool("ForceOnroad");
+  const bool force_offroad_param = params.getBool("ForceOffroad");
 
   // FrogPilot variables
   FrogPilotUIScene &frogpilot_scene = fs->frogpilot_scene;
@@ -77,8 +86,8 @@ static void update_state(UIState *s, FrogPilotUIState *fs) {
   if (scene.started) {
     frogpilot_scene.started_timer += 1;
   }
-  scene.started |= frogpilot_scene.frogpilot_toggles.value("force_onroad").toBool();
-  scene.started &= !frogpilot_scene.frogpilot_toggles.value("force_offroad").toBool();
+  scene.started |= force_onroad_param || frogpilot_scene.frogpilot_toggles.value("force_onroad").toBool();
+  scene.started &= !(force_offroad_param || frogpilot_scene.frogpilot_toggles.value("force_offroad").toBool());
 }
 
 void ui_update_params(UIState *s) {
@@ -217,8 +226,7 @@ void Device::updateBrightness(const UIState &s, const FrogPilotUIState &fs) {
       clipped_brightness = std::pow((clipped_brightness + 16.0) / 116.0, 3.0);
     }
 
-    // Scale back to 10% to 100%
-    clipped_brightness = std::clamp(100.0f * clipped_brightness, 10.0f, 100.0f);
+    clipped_brightness = std::clamp(100.0f * clipped_brightness, AUTO_BRIGHTNESS_MIN, AUTO_BRIGHTNESS_MAX);
   }
 
   int brightness = brightness_filter.update(clipped_brightness);

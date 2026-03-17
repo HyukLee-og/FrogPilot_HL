@@ -238,7 +238,7 @@ class HudRenderer(Widget):
                             rl.Color(0, 0, 0, int(255 / 2 * alpha)), rl.BLANK)
 
     set_speed_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
-    max_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
+    label_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
 
     set_speed = self.set_speed
     if self.is_cruise_set and not ui_state.is_metric:
@@ -254,14 +254,14 @@ class HudRenderer(Widget):
       set_speed_color,
     )
 
-    max_text = tr("MAX")
+    label_text = tr("SET")
     rl.draw_text_ex(
       self._font_semi_bold,
-      max_text,
+      label_text,
       rl.Vector2(x + 25, y + FONT_SIZES.set_speed - 7 + 4),
       FONT_SIZES.max_speed,
       0,
-      max_color,
+      label_color,
     )
 
   def _draw_current_speed(self, rect: rl.Rectangle) -> None:

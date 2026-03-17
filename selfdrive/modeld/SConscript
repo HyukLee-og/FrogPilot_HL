@@ -49,8 +49,10 @@ def tg_compile(flags, model_name):
 
 # Compile small models
 for model_name in ['driving_vision', 'driving_policy', 'dmonitoring_model']:
+  # UTM/Linux on arm64 reports larch64 too, but only real TICI builds should use QCOM tinygrad kernels.
+  larch64_flags = 'DEV=QCOM FLOAT16=1 NOLOCALS=1 IMAGE=2 JIT_BATCH_SIZE=0' if os.path.exists('/TICI') else 'DEV=CPU CPU_LLVM=1'
   flags = {
-    'larch64': 'DEV=QCOM FLOAT16=1 NOLOCALS=1 IMAGE=2 JIT_BATCH_SIZE=0',
+    'larch64': larch64_flags,
     'Darwin': f'DEV=CPU HOME={os.path.expanduser("~")}', # tinygrad calls brew which needs a $HOME in the env
   }.get(arch, 'DEV=CPU CPU_LLVM=1')
   tg_compile(flags, model_name)

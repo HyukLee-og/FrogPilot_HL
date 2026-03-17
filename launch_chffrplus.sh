@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+PYTHON_BIN="/usr/local/venv/bin/python"
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="python3"
+fi
 
 source "$DIR/launch_env.sh"
 
@@ -23,7 +28,7 @@ function agnos_init {
   if [ $(< /VERSION) != "$AGNOS_VERSION" ]; then
     AGNOS_PY="$DIR/system/hardware/tici/agnos.py"
     MANIFEST="$DIR/system/hardware/tici/agnos.json"
-    if $AGNOS_PY --verify $MANIFEST; then
+    if $PYTHON_BIN $AGNOS_PY --verify $MANIFEST; then
       sudo reboot
     fi
     $DIR/system/hardware/tici/updater $AGNOS_PY $MANIFEST
@@ -85,7 +90,7 @@ function launch {
   if [ ! -f $DIR/prebuilt ]; then
     ./build.py
   fi
-  ./manager.py
+  $PYTHON_BIN ./manager.py
 
   # if broken, keep on screen error
   while true; do sleep 1; done

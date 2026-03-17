@@ -2,6 +2,24 @@
 
 constexpr int CLIP_MARGIN = 500;
 
+namespace {
+
+QColor grayToneColor(const QColor &color) {
+  const float luminance = (0.299f * color.redF()) + (0.587f * color.greenF()) + (0.114f * color.blueF());
+  const float toned = std::clamp(luminance * 0.82f, 0.0f, 1.0f);
+  return QColor::fromRgbF(toned, toned, toned, color.alphaF());
+}
+
+void grayToneGradient(QLinearGradient &gradient) {
+  const auto stops = gradient.stops();
+  gradient.setStops({});
+  for (const auto &[position, color] : stops) {
+    gradient.setColorAt(position, grayToneColor(color));
+  }
+}
+
+}  // namespace
+
 static int get_path_length_idx(const cereal::XYZTData::Reader &line, const float path_height) {
   const auto &line_x = line.getX();
   int max_idx = 0;
@@ -202,6 +220,10 @@ void ModelRenderer::drawPath(QPainter &painter, const cereal::ModelDataV2::Reade
 
   } else {
     updatePathGradient(bg);
+  }
+
+  if (uiState()->status == STATUS_DISENGAGED) {
+    grayToneGradient(bg);
   }
 
   painter.setBrush(bg);

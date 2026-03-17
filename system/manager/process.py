@@ -186,6 +186,12 @@ class NativeProcess(ManagerProcess):
     if self.shutting_down:
       self.stop()
 
+    # If the process exited on its own, clear the stale handle so it can be restarted.
+    if self.proc is not None and self.proc.exitcode is not None:
+      cloudlog.info(f"{self.name} exited with {self.proc.exitcode}, restarting")
+      self.shutting_down = False
+      self.proc = None
+
     if self.proc is not None:
       return
 
@@ -216,6 +222,12 @@ class PythonProcess(ManagerProcess):
     # In case we only tried a non blocking stop we need to stop it before restarting
     if self.shutting_down:
       self.stop()
+
+    # If the process exited on its own, clear the stale handle so it can be restarted.
+    if self.proc is not None and self.proc.exitcode is not None:
+      cloudlog.info(f"{self.name} exited with {self.proc.exitcode}, restarting")
+      self.shutting_down = False
+      self.proc = None
 
     if self.proc is not None:
       return
