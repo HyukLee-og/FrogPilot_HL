@@ -21,6 +21,7 @@ Version testing-v1 custom patch (2026-03-18)
   * Included manager/UI-side fixes needed for reliable local preview and device deployment
 * Packaging
   * Checked in the current compiled device UI binary for this testing-v1 customization set
+  * Added the missing libyuv runtime files and weston/wayland launch environment needed for the checked-in UI binary to boot correctly after a git-based device update
 
 Version 0.10.3 (2025-12-17)
 ========================

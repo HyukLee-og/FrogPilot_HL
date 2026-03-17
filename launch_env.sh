@@ -27,5 +27,13 @@ fi
 
 export STAGING_ROOT="/data/safe_staging"
 
+# TICI runs weston out of /var/tmp/weston. Force Qt to the same socket so the
+# checked-in UI binary doesn't inherit an SSH/empty display environment.
+if [ -S /var/tmp/weston/wayland-0 ]; then
+  export XDG_RUNTIME_DIR="/var/tmp/weston"
+  export WAYLAND_DISPLAY="wayland-0"
+  export QT_QPA_PLATFORM="wayland-egl"
+fi
+
 # FrogPilot variables
 eval "$(/data/openpilot/frogpilot/system/environment_variables)"
