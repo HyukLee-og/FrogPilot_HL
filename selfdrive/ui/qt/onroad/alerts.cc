@@ -23,49 +23,6 @@ void drawAlertChip(QPainter &p, const QString &label, const QColor &bg_color, in
   p.setPen(QColor(0x08, 0x0C, 0x12));
   p.drawText(chip_rect, Qt::AlignCenter, label);
 }
-
-QColor alertAccentColor(cereal::SelfdriveState::AlertStatus status) {
-  switch (status) {
-    case cereal::SelfdriveState::AlertStatus::CRITICAL:
-      return QColor(0xFF, 0x5B, 0x6B);
-    case cereal::SelfdriveState::AlertStatus::USER_PROMPT:
-      return QColor(0xFF, 0xB0, 0x48);
-    case cereal::SelfdriveState::AlertStatus::NORMAL:
-    default:
-      return QColor(0x6F, 0xD3, 0xFF);
-  }
-}
-
-QString alertBadgeLabel(const QString &type, cereal::SelfdriveState::AlertStatus status) {
-  const QString alert_type = type.toLower();
-  if (alert_type.contains("crash")) return QObject::tr("SYSTEM");
-
-  switch (status) {
-    case cereal::SelfdriveState::AlertStatus::CRITICAL:
-      return QObject::tr("TAKE OVER");
-    case cereal::SelfdriveState::AlertStatus::USER_PROMPT:
-      return QObject::tr("ATTENTION");
-    case cereal::SelfdriveState::AlertStatus::NORMAL:
-    default:
-      return QObject::tr("NOTICE");
-  }
-}
-
-void drawAlertBadge(QPainter &p, const QString &label, const QColor &accent, const QRect &card_rect, int top) {
-  QFont badge_font = InterFont(24, QFont::DemiBold);
-  badge_font.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
-  const int badge_height = 42;
-  const int badge_width = std::max(154, QFontMetrics(badge_font).horizontalAdvance(label) + 40);
-  QRect badge_rect(card_rect.x() + 34, top, badge_width, badge_height);
-
-  p.setPen(Qt::NoPen);
-  p.setBrush(QColor(accent.red(), accent.green(), accent.blue(), 42));
-  p.drawRoundedRect(badge_rect, 16, 16);
-
-  p.setFont(badge_font);
-  p.setPen(accent);
-  p.drawText(badge_rect, Qt::AlignCenter, label);
-}
 }  // namespace
 
 void OnroadAlerts::updateState(const UIState &s, const FrogPilotUIState &fs) {
@@ -98,37 +55,36 @@ void OnroadAlerts::clear() {
 OnroadAlerts::Alert OnroadAlerts::getAlert(const SubMaster &sm, const SubMaster &fpsm, uint64_t started_frame) {
   const cereal::SelfdriveState::Reader &ss = sm["selfdriveState"].getSelfdriveState();
   const uint64_t selfdrive_frame = sm.rcv_frame("selfdriveState");
-  Params params;
-  const bool force_onroad = params.getBool("ForceOnroad") || frogpilot_toggles.value("force_onroad").toBool();
+  const bool force_onroad = Params().getBool("ForceOnroad") || frogpilot_toggles.value("force_onroad").toBool();
 
   // FrogPilot variables
   const cereal::FrogPilotSelfdriveState::Reader &fpss = fpsm["frogpilotSelfdriveState"].getFrogpilotSelfdriveState();
 
-  Alert a = {};
+  Alert a = Alert{};
   static QString crash_log_path = "/data/error_logs/error.txt";
   if (QFile::exists(crash_log_path)) {
     if (frogpilot_toggles.value("random_events").toBool()) {
-      a = {tr("openpilot crashed 💩"),
-           tr("Please post the \"Error Log\" in the FrogPilot Discord!"),
-           "openpilotCrashedRandomEvent",
-           cereal::SelfdriveState::AlertSize::MID,
-           cereal::SelfdriveState::AlertStatus::CRITICAL};
+      a = Alert{tr("openpilot crashed 💩"),
+                tr("Please post the \"Error Log\" in the FrogPilot Discord!"),
+                "openpilotCrashedRandomEvent",
+                cereal::SelfdriveState::AlertSize::MID,
+                cereal::SelfdriveState::AlertStatus::CRITICAL};
     } else {
-      a = {tr("openpilot crashed"),
-           tr("Please post the \"Error Log\" in the FrogPilot Discord!"),
-           "openpilotCrashed",
-           cereal::SelfdriveState::AlertSize::MID,
-           cereal::SelfdriveState::AlertStatus::CRITICAL};
+      a = Alert{tr("openpilot crashed"),
+                tr("Please post the \"Error Log\" in the FrogPilot Discord!"),
+                "openpilotCrashed",
+                cereal::SelfdriveState::AlertSize::MID,
+                cereal::SelfdriveState::AlertStatus::CRITICAL};
     }
     return a;
   } else if (selfdrive_frame >= started_frame) {  // Don't get old alert.
-    a = {ss.getAlertText1().cStr(), ss.getAlertText2().cStr(),
-         ss.getAlertType().cStr(), ss.getAlertSize(), ss.getAlertStatus()};
+    a = Alert{ss.getAlertText1().cStr(), ss.getAlertText2().cStr(),
+              ss.getAlertType().cStr(), ss.getAlertSize(), ss.getAlertStatus()};
 
     // FrogPilot variables
     if (a.size == cereal::SelfdriveState::AlertSize::NONE) {
-      a = {fpss.getAlertText1().cStr(), fpss.getAlertText2().cStr(),
-           fpss.getAlertType().cStr(), static_cast<cereal::SelfdriveState::AlertSize>(fpss.getAlertSize()), static_cast<cereal::SelfdriveState::AlertStatus>(fpss.getAlertStatus())};
+      a = Alert{fpss.getAlertText1().cStr(), fpss.getAlertText2().cStr(),
+                fpss.getAlertType().cStr(), static_cast<cereal::SelfdriveState::AlertSize>(fpss.getAlertSize()), static_cast<cereal::SelfdriveState::AlertStatus>(fpss.getAlertStatus())};
     }
   }
 
@@ -139,19 +95,19 @@ OnroadAlerts::Alert OnroadAlerts::getAlert(const SubMaster &sm, const SubMaster 
     // Handle selfdrive timeout
     if (selfdrive_frame < started_frame) {
       // car is started, but selfdriveState hasn't been seen at all
-      a = {tr("openpilot Unavailable"), tr("Waiting to start"),
-           "selfdriveWaiting", cereal::SelfdriveState::AlertSize::MID,
-           cereal::SelfdriveState::AlertStatus::NORMAL};
+      a = Alert{tr("openpilot Unavailable"), tr("Waiting to start"),
+                "selfdriveWaiting", cereal::SelfdriveState::AlertSize::MID,
+                cereal::SelfdriveState::AlertStatus::NORMAL};
     } else if (ss_missing > SELFDRIVE_STATE_TIMEOUT && !Hardware::PC()) {
       // car is started, but selfdrive is lagging or died
       if (ss.getEnabled() && (ss_missing - SELFDRIVE_STATE_TIMEOUT) < 10) {
-        a = {tr("TAKE CONTROL IMMEDIATELY"), tr("System Unresponsive"),
-             "selfdriveUnresponsive", cereal::SelfdriveState::AlertSize::FULL,
-             cereal::SelfdriveState::AlertStatus::CRITICAL};
+        a = Alert{tr("TAKE CONTROL IMMEDIATELY"), tr("System Unresponsive"),
+                  "selfdriveUnresponsive", cereal::SelfdriveState::AlertSize::FULL,
+                  cereal::SelfdriveState::AlertStatus::CRITICAL};
       } else {
-        a = {tr("System Unresponsive"), tr("Reboot Device"),
-             "selfdriveUnresponsivePermanent", cereal::SelfdriveState::AlertSize::MID,
-             cereal::SelfdriveState::AlertStatus::NORMAL};
+        a = Alert{tr("System Unresponsive"), tr("Reboot Device"),
+                  "selfdriveUnresponsivePermanent", cereal::SelfdriveState::AlertSize::MID,
+                  cereal::SelfdriveState::AlertStatus::NORMAL};
       }
     }
   }
@@ -168,67 +124,55 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
     alertHeight = 0;
   } else {
     static std::map<cereal::SelfdriveState::AlertSize, const int> alert_heights = {
-      {cereal::SelfdriveState::AlertSize::SMALL, 220},
-      {cereal::SelfdriveState::AlertSize::MID, 290},
-      {cereal::SelfdriveState::AlertSize::FULL, std::min(height() - 52, 560)},
+      {cereal::SelfdriveState::AlertSize::SMALL, 271},
+      {cereal::SelfdriveState::AlertSize::MID, 420},
+      {cereal::SelfdriveState::AlertSize::FULL, height()},
     };
     alertHeight = alert_heights[alert.size];
-    const int margin = 36;
-    const int bottom_margin = 34;
-    const int radius = 30;
-    QRect r(margin, height() - alertHeight - bottom_margin, width() - margin * 2, alertHeight);
-    alertHeight = r.height();
-    const QColor accent = alertAccentColor(alert.status);
+    int h = alertHeight;
+
+    int margin = 40;
+    int radius = 30;
+    if (alert.size == cereal::SelfdriveState::AlertSize::FULL) {
+      margin = 0;
+      radius = 0;
+    }
+    alertHeight -= margin;
+    QRect r = QRect(margin, height() - h + margin, width() - margin * 2, h - margin * 2);
 
     p.setPen(Qt::NoPen);
     p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-    p.setBrush(QColor(0x08, 0x0C, 0x12, 0xEA));
-    p.drawRoundedRect(r.translated(0, 14), radius, radius);
-
-    QLinearGradient card_gradient(r.topLeft(), r.bottomLeft());
-    card_gradient.setColorAt(0.0, QColor(0x15, 0x1A, 0x21, 0xF5));
-    card_gradient.setColorAt(1.0, QColor(0x0C, 0x10, 0x16, 0xF1));
-    p.setBrush(card_gradient);
+    p.setBrush(QBrush(frogpilot_alert_colors[static_cast<cereal::FrogPilotSelfdriveState::AlertStatus>(alert.status)]));
     p.drawRoundedRect(r, radius, radius);
 
-    p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 0x24), 2));
-    p.setBrush(Qt::NoBrush);
-    p.drawRoundedRect(r.adjusted(1, 1, -1, -1), radius, radius);
+    QLinearGradient g(0, r.y(), 0, r.bottom());
+    g.setColorAt(0, QColor::fromRgbF(0, 0, 0, 0.05));
+    g.setColorAt(1, QColor::fromRgbF(0, 0, 0, 0.35));
 
-    QRect accent_rect(r.x() + 28, r.y() + 26, r.width() - 56, 8);
-    p.setPen(Qt::NoPen);
-    p.setBrush(accent);
-    p.drawRoundedRect(accent_rect, 4, 4);
-
-    drawAlertBadge(p, alertBadgeLabel(alert.type, alert.status), accent, r, r.y() + 54);
+    p.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+    p.setBrush(QBrush(g));
+    p.drawRoundedRect(r, radius, radius);
     p.setCompositionMode(QPainter::CompositionMode_SourceOver);
 
-    p.setPen(QColor(0xF8, 0xFA, 0xFC));
+    const QPoint c = r.center();
+    p.setPen(QColor(0xff, 0xff, 0xff));
     if (alert.size == cereal::SelfdriveState::AlertSize::SMALL) {
-      p.setFont(InterFont(sidebarsOpen ? 60 : 68, QFont::Bold));
-      QRect text_rect = r.adjusted(32, 108, -32, -30);
-      p.drawText(text_rect, Qt::AlignLeft | Qt::AlignVCenter, alert.text1);
+      bool long_alert1 = alert.text1.length() > 40;
+      p.setFont(InterFont(long_alert1 && sidebarsOpen ? 64 : 74, QFont::DemiBold));
+      p.drawText(r, Qt::AlignCenter, alert.text1);
     } else if (alert.size == cereal::SelfdriveState::AlertSize::MID) {
-      const int title_font_size = sidebarsOpen ? 60 : 70;
-      const int body_font_size = sidebarsOpen ? 38 : 44;
-      p.setFont(InterFont(title_font_size, QFont::Bold));
-      QRect title_rect = r.adjusted(34, 112, -34, -108);
-      p.drawText(title_rect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, alert.text1);
-
-      p.setFont(InterFont(body_font_size));
-      p.setPen(QColor(0xB8, 0xC1, 0xCC));
-      QRect body_rect = r.adjusted(36, 194, -36, -34);
-      p.drawText(body_rect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, alert.text2);
+      bool long_alert1 = alert.text1.length() > 30;
+      p.setFont(InterFont(long_alert1 && sidebarsOpen ? 78 : 88, QFont::Bold));
+      p.drawText(QRect(0, c.y() - 125, width(), 150), Qt::AlignHCenter | Qt::AlignTop, alert.text1);
+      bool long_alert2 = alert.text2.length() > 40;
+      p.setFont(InterFont(long_alert2 && sidebarsOpen ? 56 : 66));
+      p.drawText(QRect(0, c.y() + 21, width(), 90), Qt::AlignHCenter, alert.text2);
     } else if (alert.size == cereal::SelfdriveState::AlertSize::FULL) {
-      const bool long_title = alert.text1.length() > 18;
-      p.setFont(InterFont(long_title ? 96 : 112, QFont::Bold));
-      QRect title_rect = r.adjusted(40, 126, -40, -170);
-      p.drawText(title_rect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, alert.text1);
-
-      p.setFont(InterFont(54));
-      p.setPen(QColor(0xCB, 0xD3, 0xDD));
-      QRect body_rect = r.adjusted(42, r.height() - 156, -42, -42);
-      p.drawText(body_rect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, alert.text2);
+      bool l = alert.text1.length() > 15;
+      p.setFont(InterFont(l ? 132 : 177, QFont::Bold));
+      p.drawText(QRect(0, r.y() + (l ? 240 : 270), width(), 600), Qt::AlignHCenter | Qt::TextWordWrap, alert.text1);
+      p.setFont(InterFont(88));
+      p.drawText(QRect(0, r.height() - (l ? 361 : 420), width(), 300), Qt::AlignHCenter | Qt::TextWordWrap, alert.text2);
     }
   }
 

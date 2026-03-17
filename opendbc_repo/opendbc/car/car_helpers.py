@@ -187,7 +187,8 @@ def get_car(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_multip
     CP.minEnableSpeed = -1
     CP.openpilotLongitudinalControl = True
 
-  if not CP.alphaLongitudinalAvailable and frogpilot_toggles.disable_openpilot_long:
+  sim_disable_long = bool(int(os.getenv("SIMULATION", "0"))) and params.get_bool("DisableOpenpilotLongitudinal")
+  if sim_disable_long or (not CP.alphaLongitudinalAvailable and frogpilot_toggles.disable_openpilot_long):
     CP.openpilotLongitudinalControl = False
     FPCP.openpilotLongitudinalControlDisabled = True
 

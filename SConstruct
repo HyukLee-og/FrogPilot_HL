@@ -130,6 +130,8 @@ else:
     libpath = [
       f"#third_party/acados/{arch}/lib",
       f"#third_party/libyuv/{arch}/lib",
+      "/usr/lib/aarch64-linux-gnu",
+      "/lib/aarch64-linux-gnu",
       "/usr/lib",
       "/usr/local/lib",
     ]
@@ -256,8 +258,19 @@ if arch == "Darwin":
   qt_env["FRAMEWORKS"] += [f"Qt{m}" for m in qt_modules] + ["OpenGL"]
   qt_env.AppendENVPath('PATH', os.path.join(qt_env['QTDIR'], "bin"))
 else:
-  qt_install_prefix = subprocess.check_output(['qmake', '-query', 'QT_INSTALL_PREFIX'], encoding='utf8').strip()
-  qt_install_headers = subprocess.check_output(['qmake', '-query', 'QT_INSTALL_HEADERS'], encoding='utf8').strip()
+  qt_sysroot = None
+  if arch == "larch64":
+    qt_sysroot_candidate = os.environ.get("COMMA_SYSROOT", os.path.expanduser("~/comma-sysroot"))
+    if os.path.isdir(qt_sysroot_candidate):
+      qt_sysroot = qt_sysroot_candidate
+
+  if qt_sysroot:
+    qt_install_prefix = os.path.join(qt_sysroot, "usr")
+    qt_install_headers = os.path.join(qt_install_prefix, "include/aarch64-linux-gnu/qt5")
+    qt_env.PrependENVPath('PATH', os.path.join(qt_sysroot, "usr/lib/qt5/bin"))
+  else:
+    qt_install_prefix = subprocess.check_output(['qmake', '-query', 'QT_INSTALL_PREFIX'], encoding='utf8').strip()
+    qt_install_headers = subprocess.check_output(['qmake', '-query', 'QT_INSTALL_HEADERS'], encoding='utf8').strip()
 
   qt_env['QTDIR'] = qt_install_prefix
   qt_dirs = [

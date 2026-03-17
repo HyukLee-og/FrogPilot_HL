@@ -1,3 +1,25 @@
+Version testing-v1 custom patch (2026-03-18)
+============================================
+* Onroad UI refresh
+  * Reworked the HUD layout, set speed presentation, and steering wheel/driver monitoring placement
+  * Added disengaged grayscale camera treatment with a gray path visualization
+  * Removed the fullscreen left-edge border artifact and hid the onroad screen recording button
+  * Cleaned up FrogPilot speed limit and border overlay behavior for the current layout
+* Offroad UI refresh
+  * Replaced the default offroad home with a black greeting screen and a round settings button
+  * Added a recent drive summary mode after onroad ends with drive time, distance, and openpilot usage rate
+  * Added a default idle offroad view showing cumulative FrogPilot driving totals
+  * Fixed settings interaction on PC/UTM preview and corrected FrogPilotSeconds parsing for total drive time
+* Alerts, events, and sounds
+  * Applied updated English/Korean event wording where matching events existed in the current branch
+  * Updated FCW behavior and wording, plus lead departing and steering-related alert text changes
+  * Restored the stock alert renderer after iterating on custom alert card designs
+  * Synced the current sound set to the sunnypilot staging-n assets used for this branch
+* Runtime and preview improvements
+  * Disabled automatic shutdown in power monitoring for this build
+  * Improved UTM host preview behavior, offroad preview flow, and simulator support for UI iteration
+  * Included manager/UI-side fixes needed for reliable local preview and device deployment
+
 Version 0.10.3 (2025-12-17)
 ========================
 * New driving model #36249

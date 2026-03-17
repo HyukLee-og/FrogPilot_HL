@@ -35,13 +35,23 @@ DriverMonitorRenderer::DriverMonitorRenderer() {
 
 void DriverMonitorRenderer::updateState(const UIState &s) {
   auto &sm = *(s.sm);
+  Params params;
+  const bool force_preview = params.getBool("ForceOnroad") && sm.rcv_frame("driverStateV2") <= s.scene.started_frame;
   const auto selfdrive_state = sm["selfdriveState"].getSelfdriveState();
   is_visible = selfdrive_state.getAlertSize() == cereal::SelfdriveState::AlertSize::NONE &&
-               sm.rcv_frame("driverStateV2") > s.scene.started_frame;
+               (sm.rcv_frame("driverStateV2") > s.scene.started_frame || force_preview);
   if (!is_visible) return;
 
-  is_enabled = selfdrive_state.getEnabled();
-  is_engageable = selfdrive_state.getEngageable() || is_enabled;
+  is_enabled = force_preview || selfdrive_state.getEnabled();
+  is_engageable = force_preview || selfdrive_state.getEngageable() || is_enabled;
+
+  if (force_preview) {
+    is_active = true;
+    is_rhd = false;
+    dm_fade_state = 0.0f;
+    cone_rotation_deg = 0.0f;
+    return;
+  }
 
   auto dm_state = sm["driverMonitoringState"].getDriverMonitoringState();
   is_active = dm_state.getIsActiveMode();
@@ -64,22 +74,11 @@ void DriverMonitorRenderer::draw(QPainter &painter, const QRect &surface_rect) {
 
   painter.save();
 
-  int offset = 24 + kDmSize / 2;
-  float x = is_rhd ? surface_rect.width() - offset : offset;
-  float y = surface_rect.height() - offset;
+  const int left_margin = 104;
+  const int bottom_margin = 96;
+  float x = left_margin + kDmSize / 2;
+  float y = surface_rect.height() - bottom_margin - kDmSize / 2;
   float opacity = is_active ? 0.95f : 0.50f;
-
-  if (onroad_distance_btn_enabled) {
-    if (is_rhd) {
-      x -= UI_BORDER_SIZE + (btn_size + UI_BORDER_SIZE) + UI_BORDER_SIZE;
-    } else {
-      x += UI_BORDER_SIZE + (btn_size + UI_BORDER_SIZE) + UI_BORDER_SIZE;
-    }
-  }
-
-  if (frogpilot_toggles.value("road_name_ui").toBool()) {
-    y -= UI_BORDER_SIZE;
-  }
 
   const QPixmap *cone_img = &dm_cone_disengaged_img;
   if (is_enabled) {
@@ -117,6 +116,6 @@ void DriverMonitorRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   if (frogpilot_nvg) {
     frogpilot_nvg->dmIconPosition.setX(x);
     frogpilot_nvg->dmIconPosition.setY(y);
-    frogpilot_nvg->rightHandDM = is_rhd;
+    frogpilot_nvg->rightHandDM = false;
   }
 }

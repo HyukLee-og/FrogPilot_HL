@@ -142,10 +142,22 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           elif m[0] == "cruise":
             if m[1] == "down":
               self.simulator_state.cruise_button = CruiseButtons.DECEL_SET
+              self.simulator_state.cruise_enabled = self.simulator_state.ignition
+              if self.simulator_state.cruise_enabled:
+                current_speed = self.simulator_state.speed
+                base_speed = max(current_speed, 8.0)
+                self.simulator_state.cruise_set_speed = base_speed if self.simulator_state.cruise_set_speed <= 0.0 else max(3.0, self.simulator_state.cruise_set_speed - 1.0)
             elif m[1] == "up":
               self.simulator_state.cruise_button = CruiseButtons.RES_ACCEL
+              self.simulator_state.cruise_enabled = self.simulator_state.ignition
+              if self.simulator_state.cruise_enabled:
+                current_speed = self.simulator_state.speed
+                base_speed = max(current_speed, 8.0)
+                self.simulator_state.cruise_set_speed = base_speed if self.simulator_state.cruise_set_speed <= 0.0 else self.simulator_state.cruise_set_speed + 1.0
             elif m[1] == "cancel":
               self.simulator_state.cruise_button = CruiseButtons.CANCEL
+              self.simulator_state.cruise_enabled = False
+              self.simulator_state.cruise_set_speed = 0.0
             elif m[1] == "main":
               self.simulator_state.cruise_button = CruiseButtons.MAIN
           elif m[0] == "blinker":
@@ -155,14 +167,23 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
               self.simulator_state.right_blinker = True
           elif m[0] == "ignition":
             self.simulator_state.ignition = not self.simulator_state.ignition
+            if not self.simulator_state.ignition:
+              self.simulator_state.cruise_enabled = False
+              self.simulator_state.cruise_set_speed = 0.0
           elif m[0] == "reset":
             self.world.reset()
+            self.simulator_state.cruise_enabled = False
+            self.simulator_state.cruise_set_speed = 0.0
           elif m[0] == "quit":
             break
 
       self.simulator_state.user_brake = brake_manual
       self.simulator_state.user_gas = throttle_manual
       self.simulator_state.user_torque = steer_manual * -10000
+
+      if brake_manual > 0.0:
+        self.simulator_state.cruise_enabled = False
+        self.simulator_state.cruise_set_speed = 0.0
 
       steer_manual = steer_manual * -40
 
@@ -173,8 +194,13 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.simulator_state.is_engaged = self.simulated_car.sm['selfdriveState'].active
 
       if self.simulator_state.is_engaged:
-        throttle_op = np.clip(self.simulated_car.sm['carControl'].actuators.accel / 1.6, 0.0, 1.0)
-        brake_op = np.clip(-self.simulated_car.sm['carControl'].actuators.accel / 4.0, 0.0, 1.0)
+        if self.simulated_car.sm['carParams'].openpilotLongitudinalControl:
+          throttle_op = np.clip(self.simulated_car.sm['carControl'].actuators.accel / 1.6, 0.0, 1.0)
+          brake_op = np.clip(-self.simulated_car.sm['carControl'].actuators.accel / 4.0, 0.0, 1.0)
+        else:
+          speed_error = self.simulator_state.cruise_set_speed - self.simulator_state.speed
+          throttle_op = np.clip(speed_error * 0.25, 0.0, 0.6)
+          brake_op = np.clip(-speed_error * 0.15, 0.0, 0.4)
         steer_op = self.simulated_car.sm['carControl'].actuators.steeringAngleDeg
 
         self.past_startup_engaged = True

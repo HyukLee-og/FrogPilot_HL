@@ -1,6 +1,9 @@
 #pragma once
 
+#include <QDateTime>
 #include <QFrame>
+#include <QIcon>
+#include <QJsonObject>
 #include <QLabel>
 #include <QPushButton>
 #include <QStackedLayout>
@@ -28,9 +31,13 @@ signals:
   void openSettings(int index = 0, const QString &param = "");
 
 private:
+  void mousePressEvent(QMouseEvent *event) override;
   void showEvent(QShowEvent *event) override;
   void hideEvent(QHideEvent *event) override;
   void refresh();
+  void updateGreetingStats();
+  void updateDriveSummaryStats();
+  void updateOffroadContent();
 
   Params params;
 
@@ -44,6 +51,25 @@ private:
 
   // FrogPilot variables
   ElidedLabel* date;
+  QPushButton *settings_button;
+  QLabel *greeting_title;
+  QLabel *greeting_description;
+  QLabel *drive_count_value;
+  QLabel *drive_distance_value;
+  QLabel *drive_time_value;
+  QLabel *drive_count_label;
+  QLabel *drive_distance_label;
+  QLabel *drive_time_label;
+  QWidget *drive_count_card;
+  QWidget *drive_distance_card;
+  QWidget *drive_time_card;
+  QWidget *extra_stat_card;
+  QLabel *extra_stat_value;
+  QLabel *extra_stat_label;
+  QJsonObject previous_drive_stats;
+  QDateTime last_drive_ended_at;
+  bool show_recent_drive_summary = false;
+  bool previously_onroad = false;
 };
 
 class HomeWindow : public QWidget {

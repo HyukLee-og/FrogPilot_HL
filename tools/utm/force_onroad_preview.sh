@@ -6,8 +6,20 @@ VENV_PY="${OPENPILOT_VENV_PY:-$HOME/openpilot/.venv/bin/python}"
 USER_ID="$(id -u)"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$USER_ID}"
 DISPLAY_NAME="${DISPLAY:-:0}"
-XAUTH_FILE="${XAUTHORITY:-$(ls -1 "$RUNTIME_DIR"/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1)}"
+XAUTH_FILE="${XAUTHORITY:-}"
 UI_BIN="$REPO_ROOT/selfdrive/ui/ui.utm"
+
+if [[ -z "$XAUTH_FILE" ]]; then
+  XAUTH_FILE="$(ls -1 "$RUNTIME_DIR"/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1 || true)"
+fi
+
+if [[ -z "$XAUTH_FILE" && -f "$HOME/.Xauthority" ]]; then
+  XAUTH_FILE="$HOME/.Xauthority"
+fi
+
+if [[ -z "$XAUTH_FILE" && -f "$RUNTIME_DIR/ICEauthority" ]]; then
+  XAUTH_FILE="$RUNTIME_DIR/ICEauthority"
+fi
 
 if [[ ! -x "$UI_BIN" ]]; then
   UI_BIN="$REPO_ROOT/selfdrive/ui/ui"
@@ -19,11 +31,6 @@ fi
 
 if [[ ! -x "$VENV_PY" ]]; then
   echo "Missing Python venv: $VENV_PY" >&2
-  exit 1
-fi
-
-if [[ -z "$XAUTH_FILE" ]]; then
-  echo "Could not find Xauthority file for $RUNTIME_DIR" >&2
   exit 1
 fi
 
@@ -75,13 +82,18 @@ PY
 
 sleep 2
 
-nohup env \
-  DISPLAY="$DISPLAY_NAME" \
-  XDG_RUNTIME_DIR="$RUNTIME_DIR" \
-  DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus" \
-  QT_QPA_PLATFORM=xcb \
-  XAUTHORITY="$XAUTH_FILE" \
-  "$UI_BIN" >/tmp/ui_utm.log 2>&1 &
+UI_ENV=(
+  DISPLAY="$DISPLAY_NAME"
+  XDG_RUNTIME_DIR="$RUNTIME_DIR"
+  DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus"
+  QT_QPA_PLATFORM=xcb
+)
+
+if [[ -n "$XAUTH_FILE" ]]; then
+  UI_ENV+=(XAUTHORITY="$XAUTH_FILE")
+fi
+
+nohup env "${UI_ENV[@]}" "$UI_BIN" >/tmp/ui_utm.log 2>&1 &
 
 sleep 2
 

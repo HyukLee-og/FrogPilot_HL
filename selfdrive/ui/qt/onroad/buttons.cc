@@ -67,9 +67,11 @@ void ExperimentalButton::changeMode() {
 }
 
 void ExperimentalButton::updateState(const UIState &s, const FrogPilotUIState &fs) {
+  const SubMaster &sm = *(s.sm);
+  const bool force_preview = params.getBool("ForceOnroad") && sm.rcv_frame("carState") < s.scene.started_frame;
   const auto cs = (*s.sm)["selfdriveState"].getSelfdriveState();
-  bool eng = cs.getEngageable() || cs.getEnabled() || fs.frogpilot_scene.always_on_lateral_active;
-  bool is_enabled = cs.getEnabled();
+  bool eng = force_preview || cs.getEngageable() || cs.getEnabled() || fs.frogpilot_scene.always_on_lateral_active;
+  bool is_enabled = force_preview || cs.getEnabled();
   if ((cs.getExperimentalMode() != experimental_mode) || (eng != engageable) || (is_enabled != enabled)) {
     engageable = eng;
     enabled = is_enabled;
@@ -102,8 +104,8 @@ void ExperimentalButton::paintEvent(QPaintEvent *event) {
   p.setRenderHint(QPainter::Antialiasing);
 
   QColor tint;
-  if (enabled && frogpilot_toggles.value("wheel_image").toString() == "stock") {
-    tint = QColor(0x49, 0xD2, 0x83);
+  if (frogpilot_toggles.value("wheel_image").toString() == "stock") {
+    tint = enabled ? QColor(0x49, 0xD2, 0x83) : QColor(0xE9, 0xEF, 0xF5);
   }
 
   if (frogpilot_toggles.value("wheel_image").toString() == "stock") {

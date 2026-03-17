@@ -14,7 +14,7 @@ AnnotatedCameraWidget::AnnotatedCameraWidget(VisionStreamType type, QWidget *par
   pm = std::make_unique<PubMaster>(std::vector<const char*>{"uiDebug"});
 
   main_layout = new QVBoxLayout(this);
-  main_layout->setMargin(UI_BORDER_SIZE);
+  main_layout->setContentsMargins(0, 0, 0, 0);
   main_layout->setSpacing(0);
 
   experimental_btn = new ExperimentalButton(this);
@@ -34,16 +34,13 @@ void AnnotatedCameraWidget::updateState(const UIState &s, const FrogPilotUIState
 
   // update engageability/experimental mode button
   experimental_btn->updateState(s, fs);
+  experimental_btn->setVisible(false);
   dmon.updateState(s);
 
   frogpilot_nvg->experimentalButtonPosition = QPoint(experimental_btn->x(), experimental_btn->y());
 
-  bool onroad_distance_btn_enabled = frogpilot_nvg->dmIconPosition != QPoint(0, 0) && !frogpilot_nvg->hideBottomIcons && frogpilot_toggles.value("onroad_distance_button").toBool();
-  personality_btn->setVisible(onroad_distance_btn_enabled);
-  if (onroad_distance_btn_enabled) {
-    personality_btn->move(frogpilot_nvg->rightHandDM ? width() - UI_BORDER_SIZE - personality_btn->width() - (UI_BORDER_SIZE / 2) : UI_BORDER_SIZE, frogpilot_nvg->dmIconPosition.y() - personality_btn->height() / 2);
-    personality_btn->updateState(s, fs);
-  }
+  bool onroad_distance_btn_enabled = false;
+  personality_btn->setVisible(false);
 
   dmon.onroad_distance_btn_enabled = onroad_distance_btn_enabled;
 
@@ -100,10 +97,16 @@ mat4 AnnotatedCameraWidget::calcFrameMatrix() {
 
   model.setTransform(video_transform * calib_transform);
 
-  float zx = zoom * 2 * center_x / w;
+  // Slight horizontal overscan keeps the camera frame edge-to-edge on device.
+  // Without this, calibration/rounding can leave a thin left strip of bg color
+  // visible in fullscreen onroad.
+  constexpr float kHorizontalOverscan = 1.035f;
+  constexpr float kLeftBias = -0.016f;
+
+  float zx = zoom * 2 * center_x / w * kHorizontalOverscan;
   float zy = zoom * 2 * center_y / h;
   return mat4{{
-    zx, 0.0, 0.0, -x_offset / w * 2,
+    zx, 0.0, 0.0, (-x_offset / w * 2) + kLeftBias,
     0.0, zy, 0.0, y_offset / h * 2,
     0.0, 0.0, 1.0, 0.0,
     0.0, 0.0, 0.0, 1.0,
@@ -160,6 +163,19 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
 
   painter.setRenderHint(QPainter::Antialiasing);
   painter.setPen(Qt::NoPen);
+
+  QLinearGradient chrome_gradient(0, 0, 0, height() * 0.55);
+  chrome_gradient.setColorAt(0.0, QColor(0x0E, 0x1C, 0x29, 0x34));
+  chrome_gradient.setColorAt(0.30, QColor(0x12, 0x2A, 0x3B, 0x18));
+  chrome_gradient.setColorAt(1.0, QColor(0x12, 0x2A, 0x3B, 0x00));
+  painter.fillRect(rect(), chrome_gradient);
+
+  QLinearGradient footer_gradient(0, height() * 0.56, 0, height());
+  footer_gradient.setColorAt(0.0, QColor(0x05, 0x09, 0x0F, 0x00));
+  footer_gradient.setColorAt(0.35, QColor(0x05, 0x09, 0x0F, 0x34));
+  footer_gradient.setColorAt(0.72, QColor(0x05, 0x09, 0x0F, 0x92));
+  footer_gradient.setColorAt(1.0, QColor(0x05, 0x09, 0x0F, 0xD8));
+  painter.fillRect(rect(), footer_gradient);
 
   // FrogPilot variables
   dmon.frogpilot_nvg = frogpilot_nvg;

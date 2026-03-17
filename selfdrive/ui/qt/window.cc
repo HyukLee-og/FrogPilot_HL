@@ -91,8 +91,13 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     case QEvent::TouchEnd:
     case QEvent::MouseButtonPress:
     case QEvent::MouseMove: {
-      // ignore events when device is awakened by resetInteractiveTimeout
-      ignore = !device()->isAwake() || frogpilot_scene.driver_camera_timer >= UI_FREQ / 2;
+      // UTM/PC preview should stay fully interactive even when the device wake logic is inactive.
+      if (Hardware::PC()) {
+        ignore = false;
+      } else {
+        // ignore events when device is awakened by resetInteractiveTimeout
+        ignore = !device()->isAwake() || frogpilot_scene.driver_camera_timer >= UI_FREQ / 2;
+      }
       device()->resetInteractiveTimeout(frogpilot_toggles.value("screen_timeout").toInt(), frogpilot_toggles.value("screen_timeout_onroad").toInt());
       break;
     }

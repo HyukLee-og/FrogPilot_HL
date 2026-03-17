@@ -21,7 +21,10 @@ public:
 private:
   void drawSetSpeed(QPainter &p, const QRect &surface_rect);
   void drawCurrentSpeed(QPainter &p, const QRect &surface_rect);
-  void drawText(QPainter &p, int x, int y, const QString &text, int alpha = 255);
+  void drawSteeringWheelIcon(QPainter &p, const QRect &surface_rect);
+  void drawText(QPainter &p, const QRect &rect, const QString &text, const QColor &color = QColor(0xFF, 0xFF, 0xFF),
+                Qt::Alignment alignment = Qt::AlignLeft | Qt::AlignVCenter);
+  void drawSpeedChevronCluster(QPainter &p, const QPoint &origin, const QColor &color);
 
   float speed = 0;
   float set_speed = 0;

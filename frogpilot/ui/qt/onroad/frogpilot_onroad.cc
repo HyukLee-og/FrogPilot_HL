@@ -95,13 +95,8 @@ void FrogPilotOnroadWindow::paintEvent(QPaintEvent *event) {
   p.setClipRegion(marginRegion);
   p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
 
-  if (showSteering) {
-    paintSteeringTorqueBorder(p);
-  }
-
-  if (showBlindspot || showSignal) {
-    paintTurnSignalBorder(p);
-  }
+  // Disable fullscreen edge-border metrics. They read like a stray left border
+  // in onroad and disappear only when the sidebar covers that edge.
 
   if (showFPS) {
     paintFPS(p);

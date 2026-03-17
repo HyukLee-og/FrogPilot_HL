@@ -1,7 +1,11 @@
 #include "selfdrive/ui/qt/home.h"
 
+#include <QDateTime>
 #include <QHBoxLayout>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMouseEvent>
+#include <QSpacerItem>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -21,6 +25,7 @@ HomeWindow::HomeWindow(QWidget* parent) : QWidget(parent) {
 
   sidebar = new Sidebar(this);
   main_layout->addWidget(sidebar);
+  sidebar->setVisible(false);
   QObject::connect(sidebar, &Sidebar::openSettings, this, &HomeWindow::openSettings);
 
   slayout = new QStackedLayout();
@@ -53,7 +58,7 @@ HomeWindow::HomeWindow(QWidget* parent) : QWidget(parent) {
 }
 
 void HomeWindow::showSidebar(bool show) {
-  sidebar->setVisible(show);
+  sidebar->setVisible(show && uiState()->scene.started);
 }
 
 void HomeWindow::updateState(const UIState &s, const FrogPilotUIState &fs) {
@@ -92,7 +97,7 @@ void HomeWindow::offroadTransition(bool offroad) {
   QJsonObject &frogpilot_toggles = frogpilot_scene.frogpilot_toggles;
 
   body->setEnabled(false);
-  sidebar->setVisible(offroad || params.getBool("SidebarOpen") || frogpilot_toggles.value("debug_mode").toBool());
+  sidebar->setVisible(!offroad && (params.getBool("SidebarOpen") || frogpilot_toggles.value("debug_mode").toBool()));
   if (offroad) {
     slayout->setCurrentWidget(home);
 
@@ -112,7 +117,7 @@ void HomeWindow::showDriverView(bool show, bool started) {
   } else {
     slayout->setCurrentWidget(home);
   }
-  sidebar->setVisible(show == false);
+  sidebar->setVisible(!show && uiState()->scene.started);
 
   // FrogPilot variables
   developer_sidebar->setVisible(false);
@@ -145,101 +150,117 @@ void HomeWindow::mouseDoubleClickEvent(QMouseEvent* e) {
 
 OffroadHome::OffroadHome(QWidget* parent) : QFrame(parent) {
   QVBoxLayout* main_layout = new QVBoxLayout(this);
-  main_layout->setContentsMargins(40, 40, 40, 40);
+  main_layout->setContentsMargins(48, 40, 48, 48);
 
-  // top header
-  QHBoxLayout* header_layout = new QHBoxLayout();
-  header_layout->setContentsMargins(0, 0, 0, 0);
-  header_layout->setSpacing(16);
+  QHBoxLayout *top_layout = new QHBoxLayout();
+  top_layout->setContentsMargins(0, 0, 0, 0);
+  top_layout->setSpacing(0);
 
-  // FrogPilot variables
+  settings_button = new QPushButton(this);
+  settings_button->setFixedSize(110, 110);
+  settings_button->setIcon(QIcon("../assets/icons/settings.png"));
+  settings_button->setIconSize(QSize(50, 50));
+  settings_button->setCursor(Qt::PointingHandCursor);
+  settings_button->setStyleSheet(R"(
+    QPushButton {
+      background-color: #1D1D1D;
+      border: 2px solid #3A3A3A;
+      border-radius: 55px;
+      padding: 0;
+    }
+    QPushButton:pressed {
+      background-color: #2A2A2A;
+    }
+  )");
+  settings_button->raise();
+  QObject::connect(settings_button, &QPushButton::pressed, [=]() { emit openSettings(); });
+  QObject::connect(settings_button, &QPushButton::clicked, [=]() { emit openSettings(); });
+  top_layout->addWidget(settings_button, 0, Qt::AlignLeft | Qt::AlignTop);
+  top_layout->addStretch(1);
+  main_layout->addLayout(top_layout);
+  main_layout->addSpacing(18);
+
   date = new ElidedLabel();
-  header_layout->addWidget(date, 0, Qt::AlignHCenter | Qt::AlignLeft);
-
+  date->setVisible(false);
+  version = new ElidedLabel();
+  version->setVisible(false);
   update_notif = new QPushButton(tr("UPDATE"));
   update_notif->setVisible(false);
-  update_notif->setStyleSheet("background-color: #364DEF;");
   QObject::connect(update_notif, &QPushButton::clicked, [=]() { center_layout->setCurrentIndex(1); });
-  header_layout->addWidget(update_notif, 0, Qt::AlignHCenter | Qt::AlignLeft);
-
   alert_notif = new QPushButton();
   alert_notif->setVisible(false);
-  alert_notif->setStyleSheet("background-color: #E22C2C;");
   QObject::connect(alert_notif, &QPushButton::clicked, [=] { center_layout->setCurrentIndex(2); });
-  header_layout->addWidget(alert_notif, 0, Qt::AlignHCenter | Qt::AlignLeft);
 
-  version = new ElidedLabel();
-  header_layout->addWidget(version, 0, Qt::AlignHCenter | Qt::AlignRight);
-
-  main_layout->addLayout(header_layout);
-
-  // main content
-  main_layout->addSpacing(25);
   center_layout = new QStackedLayout();
 
   QWidget *home_widget = new QWidget(this);
   {
-    QHBoxLayout *home_layout = new QHBoxLayout(home_widget);
+    QVBoxLayout *home_layout = new QVBoxLayout(home_widget);
     home_layout->setContentsMargins(0, 0, 0, 0);
-    home_layout->setSpacing(30);
+    home_layout->setSpacing(0);
 
-    // left: stack of DriveStats / DriveSummary
-    QWidget *left_widget = new QWidget(this);
-    QStackedLayout *left_stack = new QStackedLayout(left_widget);
-    left_stack->setContentsMargins(0, 0, 0, 0);
+    home_layout->addSpacing(24);
 
-    left_stack->addWidget(new DriveStats());
-    FrogPilotDriveSummary *drive_summary = new FrogPilotDriveSummary(this);
-    left_stack->addWidget(drive_summary);
+    greeting_title = new QLabel(tr("안녕하세요 종혁님"), this);
+    greeting_title->setAlignment(Qt::AlignHCenter);
+    greeting_title->setStyleSheet("font-size: 112px; font-weight: 800; color: #FFFFFF;");
+    home_layout->addWidget(greeting_title, 0, Qt::AlignHCenter);
 
-    QObject::connect(drive_summary, &FrogPilotDriveSummary::panelClosed, [left_stack]() {
-      left_stack->setCurrentIndex(0);
-    });
-    QObject::connect(uiState(), &UIState::offroadTransition, [left_stack](bool offroad) {
-      static bool previouslyOnroad = false;
-      if (offroad && previouslyOnroad) {
-        left_stack->setCurrentIndex(1);
-      }
-      previouslyOnroad = !offroad;
-    });
+    home_layout->addSpacing(16);
 
-    home_layout->addWidget(left_widget, 1);
+    greeting_description = new QLabel(tr("오늘도 편안한 주행 되세요"), this);
+    greeting_description->setAlignment(Qt::AlignHCenter);
+    greeting_description->setStyleSheet("font-size: 52px; font-weight: 500; color: #AFAFAF;");
+    home_layout->addWidget(greeting_description, 0, Qt::AlignHCenter);
 
-    // right: ExperimentalModeButton, SetupWidget, Random Events Summary
-    QStackedWidget *right_widget = new QStackedWidget(this);
-    right_widget->setFixedWidth(750);
+    home_layout->addSpacing(72);
 
-    QWidget *default_right = new QWidget(this);
-    QVBoxLayout *right_column = new QVBoxLayout(default_right);
-    right_column->setContentsMargins(0, 0, 0, 0);
-    right_column->setSpacing(30);
+    QHBoxLayout *stats_layout = new QHBoxLayout();
+    stats_layout->setContentsMargins(80, 0, 80, 0);
+    stats_layout->setSpacing(34);
 
-    ExperimentalModeButton *experimental_mode = new ExperimentalModeButton(this);
-    QObject::connect(experimental_mode, &ExperimentalModeButton::openSettings, this, &OffroadHome::openSettings);
-    right_column->addWidget(experimental_mode, 1);
+    auto createStat = [this](QWidget **card, QLabel **value, QLabel **label, const QString &title) {
+      QWidget *stat = new QWidget(this);
+      stat->setObjectName("summaryStatCard");
+      stat->setMinimumSize(0, 250);
+      stat->setStyleSheet(R"(
+        QWidget#summaryStatCard {
+          background-color: #141414;
+          border: 1px solid #242424;
+          border-radius: 30px;
+        }
+        QWidget#summaryStatCard QLabel {
+          background: transparent;
+          border: none;
+        }
+      )");
 
-    SetupWidget *setup_widget = new SetupWidget;
-    QObject::connect(setup_widget, &SetupWidget::openSettings, this, &OffroadHome::openSettings);
-    right_column->addWidget(setup_widget, 1);
+      QVBoxLayout *layout = new QVBoxLayout(stat);
+      layout->setContentsMargins(40, 34, 40, 34);
+      layout->setSpacing(14);
 
-    right_widget->addWidget(default_right);
+      *value = new QLabel("0", stat);
+      (*value)->setAlignment(Qt::AlignCenter);
+      (*value)->setStyleSheet("font-size: 84px; font-weight: 800; color: #FFFFFF;");
 
-    FrogPilotDriveSummary *random_events_summary = new FrogPilotDriveSummary(this, true);
-    right_widget->addWidget(random_events_summary);
-    right_widget->setCurrentIndex(0);
+      *label = new QLabel(title, stat);
+      (*label)->setAlignment(Qt::AlignCenter);
+      (*label)->setStyleSheet("font-size: 34px; font-weight: 600; color: #8D8D8D;");
 
-    QObject::connect(random_events_summary, &FrogPilotDriveSummary::panelClosed, [=]() {
-      right_widget->setCurrentIndex(0);
-    });
-    QObject::connect(uiState(), &UIState::offroadTransition, [right_widget](bool offroad) {
-      static bool previouslyOnroad = false;
-      if (offroad && previouslyOnroad && frogpilotUIState()->frogpilot_scene.frogpilot_toggles.value("random_events").toBool()) {
-        right_widget->setCurrentIndex(1);
-      }
-      previouslyOnroad = !offroad;
-    });
+      layout->addStretch(1);
+      layout->addWidget(*value);
+      layout->addWidget(*label);
+      layout->addStretch(1);
+      *card = stat;
+      return stat;
+    };
 
-    home_layout->addWidget(right_widget, 0);
+    stats_layout->addWidget(createStat(&drive_time_card, &drive_time_value, &drive_time_label, tr("주행 시간")), 1);
+    stats_layout->addWidget(createStat(&drive_distance_card, &drive_distance_value, &drive_distance_label, tr("주행 거리")), 1);
+    stats_layout->addWidget(createStat(&drive_count_card, &drive_count_value, &drive_count_label, tr("오픈파일럿 사용 비율")), 1);
+
+    home_layout->addLayout(stats_layout);
+    home_layout->addStretch(1);
   }
   center_layout->addWidget(home_widget);
 
@@ -264,16 +285,30 @@ OffroadHome::OffroadHome(QWidget* parent) : QFrame(parent) {
     OffroadHome {
       background-color: black;
     }
-    OffroadHome > QPushButton {
-      padding: 15px 30px;
-      border-radius: 5px;
-      font-size: 40px;
-      font-weight: 500;
-    }
-    OffroadHome > QLabel {
-      font-size: 55px;
-    }
   )");
+
+  QObject::connect(uiState(), &UIState::offroadTransition, [this](bool offroad) {
+    const QJsonObject current_stats = QJsonDocument::fromJson(QByteArray::fromStdString(params.get("FrogPilotStats"))).object();
+
+    if (!offroad) {
+      previous_drive_stats = current_stats;
+    } else if (previously_onroad) {
+      last_drive_ended_at = QDateTime::currentDateTime();
+      show_recent_drive_summary = true;
+    }
+
+    previously_onroad = !offroad;
+    updateOffroadContent();
+  });
+}
+
+void OffroadHome::mousePressEvent(QMouseEvent *event) {
+  if (settings_button->geometry().adjusted(-12, -12, 12, 12).contains(event->pos())) {
+    emit openSettings();
+    event->accept();
+    return;
+  }
+  QFrame::mousePressEvent(event);
 }
 
 void OffroadHome::showEvent(QShowEvent *event) {
@@ -305,14 +340,87 @@ void OffroadHome::refresh() {
   if (alerts) {
     alert_notif->setText(QString::number(alerts) + (alerts > 1 ? tr(" ALERTS") : tr(" ALERT")));
   }
+  updateOffroadContent();
+}
 
-  // FrogPilot variables
-  FrogPilotUIState &fs = *frogpilotUIState();
-  FrogPilotUIScene &frogpilot_scene = fs.frogpilot_scene;
-  QJsonObject &frogpilot_toggles = frogpilot_scene.frogpilot_toggles;
+void OffroadHome::updateGreetingStats() {
+  const bool is_metric = params.getBool("IsMetric");
+  const QJsonObject frogpilot_stats = QJsonDocument::fromJson(QByteArray::fromStdString(params.get("FrogPilotStats"))).object();
 
-  date->setText(QLocale(uiState()->language.mid(5)).toString(QDateTime::currentDateTime(), "dddd, MMMM d"));
-  date->setVisible(util::system_time_valid());
+  const int total_drives = frogpilot_stats.value("FrogPilotDrives").toInt();
+  const double total_meters = frogpilot_stats.value("FrogPilotMeters").toDouble();
+  const int total_seconds = qMax(0, qRound(frogpilot_stats.value("FrogPilotSeconds").toDouble()));
 
-  version->setText(getBrand() + " v" + getVersion().left(14).trimmed() + " - " + cleanModelName(frogpilot_toggles.value("model_name").toString()));
+  const double distance_value = is_metric ? total_meters / 1000.0 : total_meters * METER_TO_MILE;
+  const QString distance_unit = is_metric ? tr("km") : tr("mi");
+
+  const int total_hours = total_seconds / 3600;
+  const int total_minutes = (total_seconds % 3600) / 60;
+  QString formatted_time;
+  if (total_hours > 0) {
+    formatted_time = QString("%1시간 %2분").arg(QLocale().toString(total_hours), QLocale().toString(total_minutes));
+  } else {
+    formatted_time = QString("%1분").arg(QLocale().toString(total_minutes));
+  }
+
+  drive_time_value->setText(formatted_time);
+  drive_time_label->setText(tr("주행 시간"));
+
+  drive_distance_value->setText(QString("%1 %2").arg(QLocale().toString(qRound(distance_value)), distance_unit));
+  drive_distance_label->setText(tr("주행 거리"));
+
+  drive_count_value->setText(QLocale().toString(total_drives));
+  drive_count_label->setText(tr("주행 횟수"));
+}
+
+void OffroadHome::updateDriveSummaryStats() {
+  const bool is_metric = params.getBool("IsMetric");
+  const QJsonObject current_stats = QJsonDocument::fromJson(QByteArray::fromStdString(params.get("FrogPilotStats"))).object();
+
+  auto diff_double = [&](const QString &key) {
+    return current_stats.value(key).toDouble() - previous_drive_stats.value(key).toDouble();
+  };
+
+  const int tracked_time = qMax(0, qRound(diff_double("TrackedTime")));
+  const int engaged_time = qMax(0, qRound(diff_double("AOLTime") + diff_double("LongitudinalTime")));
+  const double drive_meters = qMax(0.0, diff_double("FrogPilotMeters"));
+
+  const int engagement_percent = tracked_time > 0 ? engaged_time * 100 / tracked_time : 0;
+  const double drive_distance = is_metric ? drive_meters / 1000.0 : drive_meters * METER_TO_MILE;
+  const QString distance_unit = is_metric ? tr("km") : tr("mi");
+
+  const int drive_hours = tracked_time / 3600;
+  const int drive_minutes = (tracked_time % 3600) / 60;
+  QString formatted_time;
+  if (drive_hours > 0) {
+    formatted_time = QString("%1시간 %2분").arg(QLocale().toString(drive_hours), QLocale().toString(drive_minutes));
+  } else {
+    formatted_time = QString("%1분").arg(QLocale().toString(drive_minutes));
+  }
+
+  drive_time_value->setText(formatted_time);
+  drive_time_label->setText(tr("주행 시간"));
+
+  drive_distance_value->setText(QString("%1 %2").arg(QLocale().toString(qRound(drive_distance)), distance_unit));
+  drive_distance_label->setText(tr("주행 거리"));
+
+  drive_count_value->setText(QString("%1%").arg(QLocale().toString(engagement_percent)));
+  drive_count_label->setText(tr("오픈파일럿 사용 비율"));
+}
+
+void OffroadHome::updateOffroadContent() {
+  const bool summary_preview = util::getenv("OFFROAD_SUMMARY_PREVIEW", 0) == 1;
+  const bool recent_summary_active = summary_preview || (show_recent_drive_summary && last_drive_ended_at.isValid() &&
+                                     last_drive_ended_at.secsTo(QDateTime::currentDateTime()) < 600);
+
+  if (recent_summary_active) {
+    greeting_title->setText(tr("주행이 종료되었습니다"));
+    greeting_description->setText(tr("수고하셨습니다"));
+    updateDriveSummaryStats();
+  } else {
+    show_recent_drive_summary = false;
+    greeting_title->setText(tr("안녕하세요 종혁님"));
+    greeting_description->setText(tr("오늘도 편안한 주행 되세요"));
+    updateGreetingStats();
+  }
 }

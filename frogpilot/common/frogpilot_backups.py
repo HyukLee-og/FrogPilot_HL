@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import datetime
+import os
 import shutil
 import tarfile
 import zstandard as zstd
@@ -79,8 +80,10 @@ def create_backup(backup, destination, success_message, fail_message, params, mi
     print("Backup already exists. Aborting...")
     return
 
+  unique_suffix = f"_{os.getpid()}_{datetime.datetime.now().strftime('%f')}_in_progress"
+
   if compressed:
-    compressed_temp = destination.parent / f"{destination.name}_in_progress.tar.zst"
+    compressed_temp = destination.parent / f"{destination.name}{unique_suffix}.tar.zst"
 
     with open(compressed_temp, "wb") as f_out:
       cctx = zstd.ZstdCompressor()
@@ -91,16 +94,26 @@ def create_backup(backup, destination, success_message, fail_message, params, mi
           except OSError:
             pass
 
-    compressed_temp.rename(final_destination)
+    try:
+      compressed_temp.rename(final_destination)
+    except FileExistsError:
+      delete_file(compressed_temp, report=False)
+      print("Backup already exists. Aborting...")
+      return
 
     compressed_backup_size = final_destination.stat().st_size
     if minimum_backup_size == 0 or compressed_backup_size < minimum_backup_size:
       params.put("MinimumBackupSize", int(compressed_backup_size))
   else:
-    in_progress_destination = destination.parent / f"{destination.name}_in_progress"
+    in_progress_destination = destination.parent / f"{destination.name}{unique_suffix}"
 
     shutil.copytree(backup, in_progress_destination, symlinks=True)
 
-    in_progress_destination.rename(destination)
+    try:
+      in_progress_destination.rename(destination)
+    except FileExistsError:
+      delete_file(in_progress_destination, report=False)
+      print("Backup already exists. Aborting...")
+      return
 
   print(success_message)

@@ -39,6 +39,8 @@ class SimulatorState:
     self.valid = False
     self.is_engaged = False
     self.ignition = True
+    self.cruise_enabled = False
+    self.cruise_set_speed = 0.0
 
     self.velocity: vec3 = None
     self.bearing: float = 0

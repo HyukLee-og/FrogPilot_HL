@@ -60,13 +60,14 @@ class SimulatedCar:
     msg.append(self.packer.make_can_msg("CRUISE_FAULT_STATUS", 0, {}))
     msg.append(self.packer.make_can_msg("SCM_FEEDBACK", 0,
                                     {
-                                      "MAIN_ON": 1,
+                                      "MAIN_ON": 1 if simulator_state.ignition else 0,
                                       "LEFT_BLINKER": simulator_state.left_blinker,
                                       "RIGHT_BLINKER": simulator_state.right_blinker
                                     }))
+    acc_status = int(simulator_state.cruise_enabled or simulator_state.is_engaged)
     msg.append(self.packer.make_can_msg("POWERTRAIN_DATA", 0,
                                     {
-                                    "ACC_STATUS": int(simulator_state.is_engaged),
+                                    "ACC_STATUS": acc_status,
                                     "PEDAL_GAS": simulator_state.user_gas,
                                     "BRAKE_PRESSED": simulator_state.user_brake > 0
                                     }))
@@ -74,7 +75,11 @@ class SimulatedCar:
 
     # *** cam bus ***
     msg.append(self.packer.make_can_msg("STEERING_CONTROL", 2, {}))
-    msg.append(self.packer.make_can_msg("ACC_HUD", 2, {}))
+    cruise_speed_kph = int(round(simulator_state.cruise_set_speed * 3.6)) if acc_status else 255
+    msg.append(self.packer.make_can_msg("ACC_HUD", 2, {
+      "CRUISE_SPEED": cruise_speed_kph,
+      "CRUISE_CONTROL_LABEL": 0,
+    }))
     msg.append(self.packer.make_can_msg("LKAS_HUD", 2, {}))
 
     self.pm.send('can', can_list_to_can_capnp(msg))
