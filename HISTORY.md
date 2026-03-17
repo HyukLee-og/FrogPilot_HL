@@ -1,428 +1,724 @@
-# UI / Runtime Work History
+# frogpilot-testing-v1 작업 이력 / 인수인계 문서
 
-Last updated: 2026-03-17
+최종 갱신: 2026-03-18
 
-Repository baseline:
-- Branch: `testing-v1`
-- Base commit when this work started: `61c139a`
-- Local repo path: `/Users/ijonghyeog/Desktop/frogpilot-testing-v1`
-- UTM repo path used during development: `/home/hyuklee/frogpilot-testing-v1`
-- Comma device repo path used during deployment: `/data/openpilot`
+## 1. 문서 목적
 
-## Purpose of this file
+이 문서는 `/Users/ijonghyeog/Desktop/frogpilot-testing-v1` 저장소를 클론한 시점부터 2026-03-18 현재까지 진행한 모든 작업을 정리한 인수인계 문서다.
 
-This file is a handoff/history document for anyone continuing work on this branch.
+목적은 다음과 같다.
 
-It records:
-- what was changed
-- why it was changed
-- what is already verified
-- what is still unstable or incomplete
-- how to keep using the current UTM/comma workflow without repeating earlier mistakes
+- 어떤 작업을 했는지 빠짐없이 기록
+- 현재 무엇이 유지 상태인지, 무엇이 실험 후 되돌려졌는지 구분
+- UTM 미리보기와 실제 콤마 기기 배포 흐름을 다시 시행착오 없이 재현
+- 이후 다른 작업자가 문제를 겪을 때 원인 후보를 빠르게 좁힐 수 있게 함
 
-## Current agreed UI state
+이 문서는 `RELEASES.md` 보다 훨씬 자세한 내부 작업 기록이다.
 
-These are the latest states the user wanted to keep:
+## 2. 작업 기준 정보
 
-- Onroad outer status border removed.
-- Screen recorder button hidden.
-- `MAX` style set-speed box changed to `SET`.
-- The later "larger readability-first SET card" experiment was reverted.
-- Speed limit widget under the `SET` area was removed because it overlapped and looked wrong.
-- When openpilot is onroad but disengaged:
-  - camera image becomes darker and grayscale
-  - path becomes gray-toned
-- These latest disengaged visual changes are currently implemented in the repo and verified in UTM preview.
-- These latest disengaged visual changes were not yet pushed to the comma device at the time of this handoff.
+- 로컬 저장소: `/Users/ijonghyeog/Desktop/frogpilot-testing-v1`
+- UTM Linux 저장소: `/home/hyuklee/frogpilot-testing-v1`
+- 콤마 기기 저장소: `/data/openpilot`
+- 최초 작업 시작 기준 브랜치: `testing-v1`
+- 최초 클론 직후 기준 커밋: `61c139ab` (`Compile FrogPilot`)
+- 현재 원격 브랜치 HEAD: `8ac7cfd3` (`Add blindspot onroad warning icons`)
 
-## High-level summary
+최근 이 작업과 직접 관련된 커밋 흐름:
 
-This work ended up covering three areas:
+- `db8206db` `Refine onroad UI preview and runtime fixes`
+- `1e83bc89` `Redesign onroad alert cards`
+- `14c5b5b7` `Refine onroad and offroad UI`
+- `c79b911e` `Check in compiled UI binary`
+- `25b258d9` `Fix device UI runtime environment`
+- `8ac7cfd3` `Add blindspot onroad warning icons`
 
-1. UI customization for onroad.
-2. UTM preview / restart tooling so UI could be viewed without a full stable simulator.
-3. Runtime fixes needed so UTM preview and comma device deployment would keep working.
+## 3. 현재 최종 유지 상태 요약
 
-## Work log
+### Onroad
 
-### 1. Repository and UI source verification
+- onroad 바깥 상태 테두리 제거
+- fullscreen일 때 왼쪽 남색 띠 문제는 overscan/edge 조정으로 최대한 줄인 상태
+- 화면 녹화 버튼 숨김
+- `MAX` 계열 속도 박스는 `SET` 표시로 변경
+- `SET` 아래에 겹치던 speed limit/pending/source UI 제거
+- disengaged 상태일 때:
+  - 카메라 화면 흑백 + 어둡게
+  - path 회색톤
+- steering wheel 버튼/DM 위치, 하단 그라데이션, 일부 HUD 재배치는 현재 accepted 상태
+- blindspot 좌우 아이콘 기능 추가
 
-- Confirmed this branch contains editable Qt/C++ UI source and is not just a prebuilt UI binary dump.
-- Main UI work is in:
-  - `selfdrive/ui/qt/onroad/...`
-  - `frogpilot/ui/qt/onroad/...`
-- There are also Python fallback/onroad render paths that needed matching changes:
-  - `selfdrive/ui/onroad/...`
-  - `selfdrive/ui/mici/onroad/...`
+### Offroad
 
-### 2. Build / preview strategy that actually worked
+- 전체 검정 배경
+- 기본 좌측 sidebar 숨김
+- 좌상단 원형 설정 버튼
+- 기본 offroad 홈:
+  - 타이틀 `안녕하세요 종혁님`
+  - 설명 `오늘도 편안한 주행 되세요`
+  - 누적 통계 카드 표시
+- onroad 종료 직후 offroad 홈:
+  - 타이틀 `주행이 종료되었습니다`
+  - 설명 `수고하셨습니다`
+  - 최근 주행 요약 카드 3개 표시
+- 최근 주행 요약 노출 시간: 10분
 
-- Native comma-device UI builds were attempted first.
-- Device-local `scons selfdrive/ui/ui` was unstable and caused reboots / process death during build.
-- Because of that, the practical workflow became:
-  - edit locally
-  - sync to UTM
-  - build in UTM
-  - use UTM for preview
-  - use UTM/device-compatible build artifacts for comma deployment
-- UTM preview and comma deployment should be treated as separate targets.
+### Alerts / Events
 
-### 3. UTM onroad preview strategy
+- 여러 차례 커스텀 카드형 이벤트 디자인을 시도했지만, 최종적으로는 기존 stock 이벤트 렌더러로 되돌림
+- 이벤트 문구/FCW/lead departing/steering 관련 텍스트는 수정 반영
 
-- An unsafe `pandaStates` spoof path was intentionally not used.
-- A safer UTM-only preview flow was created instead.
-- New helper script added:
-  - `tools/utm/force_onroad_preview.sh`
-- What this script does:
-  - copies persistent `CarParams` into active params
-  - restarts openpilot manager and UI only
-  - clears stale msgq state
-  - sets `ForceOnroad=True` after manager starts
-  - launches `ui.utm`
-- Important behavior discovered:
-  - `ForceOnroad` is a `CLEAR_ON_MANAGER_START` param
-  - if it is set before manager starts, it gets wiped
-  - therefore it must be written after manager startup
-- The user later clarified that "UTM reboot" should mean "restart openpilot inside UTM", not reboot the whole VM.
-- From this point onward, "UTM reboot" should be interpreted as:
-  - stop manager/UI/bridge as needed
-  - clear runtime state
-  - restart openpilot only
+### Runtime / Build / Deploy
 
-### 4. Onroad border removal
+- UTM 미리보기는 `tools/utm/force_onroad_preview.sh` 기준
+- 직접 콤마 기기에서 `scons selfdrive/ui/ui` 빌드는 불안정해서 비권장
+- 기기 배포용 checked-in `selfdrive/ui/ui` 바이너리와 `launch_env.sh`, `libyuv` 런타임까지 함께 관리
+- `git pull` 후 `ui`가 디스플레이에 못 붙거나 `libyuv` 때문에 죽던 문제는 `25b258d9` 로 해결
 
-- Removed the visible outer status border from the Qt onroad path.
-- Matching Python fallback path was also updated so behavior stays consistent.
-- Files:
+## 4. 전체 작업 내역 상세
+
+### 4-1. 저장소 클론 및 UI 소스 확인
+
+- 빈 디렉터리였던 `/Users/ijonghyeog/Desktop/frogpilot-testing-v1` 에 `testing-v1` 브랜치 클론
+- 클론 당시 HEAD 확인: `61c139a`
+- `selfdrive/ui/ui` 가 체크인된 바이너리이긴 하지만, 실제 UI는 Qt/C++ 소스가 함께 포함된 구조임을 확인
+- 주요 수정 대상 경로 확인:
+  - `selfdrive/ui/qt/onroad/*`
+  - `selfdrive/ui/qt/offroad/*`
+  - `frogpilot/ui/qt/onroad/*`
+  - `frogpilot/ui/qt/offroad/*`
+
+### 4-2. 초기 onroad 진입 테스트 및 방향 전환
+
+- 초기에 콤마 기기에서 `pandaStates` 를 위조하는 `spoof_onroad.py` 방식으로 onroad 진입 테스트를 시도
+- 이후 이 방식은 안전/재현성 측면에서 장기 workflow로 쓰지 않기로 정리
+- 이후부터는 다음 둘로 분리:
+  - UTM preview로 화면 확인
+  - 실제 콤마 기기에서는 최종 배포 후 확인
+
+### 4-3. onroad 1차 핵심 수정
+
+#### a. 외곽 테두리 제거
+
+- onroad 바깥 status border 제거
+- Qt 경로와 Python fallback 경로 둘 다 맞춤
+- 관련 파일:
   - `selfdrive/ui/qt/onroad/onroad_home.cc`
   - `selfdrive/ui/onroad/augmented_road_view.py`
 
-### 5. Alert area redesign and onroad state handling
+#### b. `MAX` -> `SET`
 
-- Alert rendering was refactored so custom chips and alert layout work more reliably.
-- Added chip-style alert helper drawing.
-- Added state tracking for engageable/enabled state.
-- Added a `ForceOnroad` fallback in alert logic so UTM preview would not trip the "waiting for start" / missing selfdriveState behavior.
-- Later, the event card itself was redesigned again in a simpler direction:
-  - floating dark card instead of a giant solid warning slab
-  - thin severity accent line
-  - small badge label (`NOTICE`, `ATTENTION`, `TAKE OVER`, `SYSTEM`)
-  - stronger title/body typography hierarchy
-  - simpler bottom-sheet layout with soft border/shadow treatment
-- For UTM testing, an existing `openpilot crashed` event was previewed by creating `/data/error_logs/error.txt`.
-- Files:
-  - `selfdrive/ui/qt/onroad/alerts.cc`
-  - `selfdrive/ui/qt/onroad/alerts.h`
-
-### 6. SET speed HUD work
-
-- `MAX` label was replaced with `SET`.
-- Qt HUD path was updated first.
-- Python fallback HUD renderers were also updated so the same label appears there too.
-- A larger, more readable `SET` card experiment was later tried.
-- The user did not like the larger card, so that specific redesign was reverted.
-- Current state:
-  - `SET` remains
-  - compact layout remains
-  - large-card redesign is reverted
-- Files:
+- 현재 속도 우측 박스의 `MAX` 표시를 `SET` 으로 변경
+- Python fallback HUD도 동일하게 맞춤
+- 관련 파일:
   - `selfdrive/ui/qt/onroad/hud.cc`
   - `selfdrive/ui/onroad/hud_renderer.py`
   - `selfdrive/ui/mici/onroad/hud_renderer.py`
 
-### 7. Speed limit widget under SET was removed
+#### c. `SET` 아래 speed limit 관련 UI 제거
 
-- The speed limit widget looked like it was stacking or overlapping under the `SET` area.
-- Instead of trying to keep that widget in a broken layout, it was fully disabled in the FrogPilot onroad overlay.
-- Current effect:
-  - no speed limit sign under the `SET` area
-  - no pending speed limit widget
-  - no speed limit sources widget
-- File:
+- `SET` 아래에 speed limit이 겹쳐 보이는 문제 확인
+- FrogPilot overlay 쪽 speed limit / pending limit / source 표시를 제거
+- 현재는 `SET` 하단에 해당 위젯이 나오지 않음
+- 관련 파일:
   - `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
 
-### 8. Screen recorder button hidden
+#### d. 화면 녹화 버튼 숨김
 
-- The user wanted the onroad recording button removed from the UI.
-- It was hard-hidden in the Qt path.
-- At one point it was also temporarily hidden on device by param, but the code path is now also forcing it hidden.
-- File:
+- onroad recording 버튼 제거 요청 반영
+- Qt 경로에서 hard hide
+- 기기에서는 한때 param으로도 숨겼으나, 현재는 코드상 숨김이 기준
+- 관련 파일:
   - `selfdrive/ui/qt/onroad/annotated_camera.cc`
 
-### 9. Experimental / steering wheel button styling
+#### e. steering wheel 버튼 / DM widget 정리
 
-- Button background ellipse was removed from the wheel button rendering.
-- Added tint support for icon rendering.
-- If stock wheel image is used and openpilot is enabled, the wheel icon gets a green tint.
-- Files:
+- wheel 버튼 배경 스타일 정리
+- stock wheel일 때 enabled 상태에서 초록 tint 적용
+- DM widget은 asset 기반 형태로 재구성
+- 관련 파일:
   - `selfdrive/ui/qt/onroad/buttons.cc`
   - `selfdrive/ui/qt/onroad/buttons.h`
-
-### 10. Driver monitoring widget restyle
-
-- The original face-keypoint style DM widget was replaced with an asset-based layered style.
-- Added separate assets/tints for disengaged, engageable, and enabled states.
-- Orientation handling was simplified into a cone rotation model.
-- Files:
   - `selfdrive/ui/qt/onroad/driver_monitoring.cc`
   - `selfdrive/ui/qt/onroad/driver_monitoring.h`
 
-### 11. Disengaged camera effect
+#### f. disengaged 시각 효과
 
-- Added shader-driven camera post-processing for onroad disengaged state.
-- Current effect when `scene.started` is true and status is `STATUS_DISENGAGED`:
-  - camera frame becomes grayscale
-  - camera frame brightness is multiplied down to `0.62`
-- This is intentionally only the camera frame, not the whole UI.
-- Files:
+- disengaged 상태일 때 카메라 화면만 grayscale + dim
+- path만 회색톤 적용
+- 관련 파일:
   - `selfdrive/ui/qt/widgets/cameraview.cc`
   - `selfdrive/ui/qt/widgets/cameraview.h`
   - `selfdrive/ui/qt/onroad/annotated_camera.cc`
-
-### 12. Disengaged path gray tone
-
-- The user wanted only the path to turn gray, not the whole overlay.
-- Implemented a gradient gray-toning pass only when UI status is `STATUS_DISENGAGED`.
-- This leaves the rest of the HUD alone.
-- File:
   - `selfdrive/ui/qt/onroad/model.cc`
 
-### 13. UTM modeld / tinygrad compatibility fixes
+### 4-4. UTM onroad preview workflow 확립
 
-- UTM is `aarch64 Linux`, which initially made the branch try to use QCOM tinygrad kernels.
-- That caused crashes because UTM does not have `/dev/kgsl-3d0`.
-- Fix:
-  - only use `DEV=QCOM` when `/TICI` actually exists
-  - otherwise use CPU tinygrad on UTM/Linux arm64
-- Files:
+- 단순히 `ui.utm` 만 띄우는 것으로는 onroad 검증이 어려웠음
+- UTM 전용 onroad preview 스크립트 작성:
+  - `tools/utm/force_onroad_preview.sh`
+
+이 스크립트가 맡는 일:
+
+- manager/ui만 재기동
+- stale runtime state 정리
+- `ForceOnroad` 적용
+- `ui.utm` 실행
+
+중요하게 밝혀진 점:
+
+- `ForceOnroad` 는 `CLEAR_ON_MANAGER_START` 파라미터
+- manager 시작 전에 써두면 지워짐
+- 반드시 manager 시작 후 다시 써야 함
+
+추가로 나중에 이 스크립트에 다음 보강이 들어감:
+
+- background reassert loop로 일정 시간 `ForceOnroad=True` 재적용
+- UTM에서 onroad preview가 offroad로 다시 튀는 현상 완화
+
+### 4-5. UTM full stack / simulator / input 관련 작업
+
+UTM에서 openpilot 전체를 띄우고 UI를 보는 과정에서 다음 작업들이 있었다.
+
+#### a. tinygrad / modeld / arm64 Linux 문제
+
+- UTM이 `aarch64 Linux` 라는 이유로 QCOM 경로를 타며 `/dev/kgsl-3d0` 오류 발생
+- `/TICI` 존재 여부를 기준으로만 `DEV=QCOM` 을 타게 수정
+- CPU tinygrad 모델 재생성
+- `desire` / `desire_pulse` mismatch도 compatibility layer로 해결
+- 관련 파일:
   - `selfdrive/modeld/SConscript`
-- A second UTM issue appeared after regenerating CPU models:
-  - some policy models expected `desire`
-  - some runtime code still used `desire_pulse`
-- Compatibility mapping was added so both cases work.
-- File:
   - `selfdrive/modeld/modeld.py`
 
-### 14. UTM full-stack bring-up support
+#### b. UTM bring-up helper
 
-- Added `selfdrive/test/helpers.py` to seed a valid calibration / setup path for simulator flows.
-- This made UTM / simulated flows easier to start without going through setup UI every time.
-- File:
+- 시뮬레이터/preview 진입을 쉽게 하려고 helper 추가
+- 관련 파일:
+  - `selfdrive/test/__init__.py`
   - `selfdrive/test/helpers.py`
 
-### 15. MetaDrive helper changes
+#### c. MetaDrive 렌더/시뮬레이터 bring-up
 
-- `tools/sim/bridge/metadrive/metadrive_bridge.py` was adjusted so MetaDrive rendering can be enabled for visible simulator runs.
-- This was used while trying to get a richer onroad preview in UTM.
-- File:
+- MetaDrive 창 visible mode 테스트
+- 시뮬레이터와 openpilot 전체 스택을 UTM에 띄워보는 작업 진행
+- Honda Civic 2022 + 롱컨 off 상태를 기준으로 맞추는 쪽이 가장 안정적이었음
+- 관련 파일:
   - `tools/sim/bridge/metadrive/metadrive_bridge.py`
+  - `tools/sim/bridge/common.py`
+  - `tools/sim/lib/common.py`
+  - `tools/sim/lib/simulated_car.py`
+  - `opendbc_repo/opendbc/car/car_helpers.py`
 
-### 16. Comma device runtime fixes
+#### d. UTM 설정 화면 입력 문제 해결
 
-- The comma device showed `process not running mapd`, which blocked engagement.
-- Root cause found:
-  - process manager could keep a stale `proc` handle after a process died
-  - manager then failed to restart that process cleanly
-- Fix:
-  - clean up stale `proc` references in process handling path
-- File:
-  - `system/manager/process.py`
-- Also discovered the device launch path was not consistently using the correct Python runtime.
-- Fix:
-  - `launch_chffrplus.sh` now prefers `/usr/local/venv/bin/python`
-  - falls back to `python3` if unavailable
-- File:
-  - `launch_chffrplus.sh`
-- This fix was applied in the repo and also synced to the actual device during debugging.
+- UTM preview에서 설정 버튼, Back 버튼, 일반 버튼들이 먹지 않던 문제 발생
+- 원인:
+  - `settings.h` 쪽 상태값 초기화 누락
+  - PC/UTM에서 `window.cc` 입력 필터가 실제 클릭 이벤트를 막음
+- 수정:
+  - settings 상태값 기본 초기화
+  - PC 환경에서 eventFilter가 입력을 과도하게 막지 않게 조정
+- 관련 파일:
+  - `selfdrive/ui/qt/offroad/settings.h`
+  - `selfdrive/ui/qt/window.cc`
 
-### 17. Device runtime library path fix
+### 4-6. 이벤트/알림 카드 디자인 실험과 최종 되돌림
 
-- While getting UTM-built binaries to run on comma, a `libyuv` runtime path issue appeared.
-- Added conditional `LD_LIBRARY_PATH` setup for local `third_party/libyuv/larch64/lib`.
-- File:
-  - `launch_env.sh`
+이 구간은 실험이 많았고, 최종적으로는 대부분 되돌아갔다.
 
-### 18. ForceOnroad fallback in core UI state
+#### 시도했던 것
 
-- UTM did not reliably have `frogpilotPlan` alive.
-- Because of that, the UI could not always see the normal FrogPilot `force_onroad` toggle flow.
-- Added direct `Params()` fallback reads for:
-  - `ForceOnroad`
-  - `ForceOffroad`
-- File:
-  - `selfdrive/ui/ui.cc`
-- Alert logic was also updated to use the same fallback.
+- dark floating card 형태의 간결한 alert 디자인
+- severity accent line
+- `NOTICE`, `ATTENTION`, `TAKE OVER`, `SYSTEM` 같은 배지
+- 제목/본문 중앙정렬
+- full/mid/small 크기별 다른 타이포 조정
+- 각 status별 색감/그라데이션 조정
 
-## Current file-by-file change map
+#### 추가로 했던 세부 실험
 
-This is the current local diff footprint and why each file matters.
+- `NOTICE` 배지 제거
+- `frogpilot` 상태 초록 하이라이트 복구
+- full alert에서 title/description 간격 조정
+- 모든 배지 제거
+- background gradient 강도/높이/완만함 반복 조정
+
+#### 최종 결론
+
+- 여러 시도 끝에 사용자가 stock renderer가 더 낫다고 판단
+- 따라서 이벤트 렌더는 기존 방식으로 완전히 되돌림
+
+관련 파일:
+
+- 실험 및 되돌림 중심 파일:
+  - `selfdrive/ui/qt/onroad/alerts.cc`
+  - `selfdrive/ui/qt/onroad/alerts.h`
+
+보조로 사용한 미리보기 방식:
+
+- `/data/error_logs/error.txt` 를 만들어 `openpilot crashed` 이벤트 강제 표시
+- local/UTM용 preview 스크립트도 만들었지만 최종 커밋에는 포함되지 않은 것이 있음
+
+### 4-7. onroad 대형 레이아웃 실험과 되돌림
+
+사용자 제공 SVG(`Group 3`, `Group 10`, `Group 11`) 참고로 큰 onroad 개편도 시도했다.
+
+#### 시도했던 것
+
+- 속도/SET/LFA/휠/이벤트를 상단이 아니라 중단/하단으로 재배치
+- 우상단 속도 레이아웃
+- 하단 중앙 속도 + 우측 SET + 좌우 DM/휠 배치
+- SVG 스타일의 이벤트 배경/카메라 오버레이
+- `SET` 가독성 우선형 대형 카드
+
+#### 결과
+
+- 일부 실험은 사용자가 즉시 되돌림 요청
+- 특히 아래는 rejected / reverted 상태:
+  - 큰 `SET` 카드
+  - 상단 정보 전체 재배치
+  - SVG 기반 대형 onroad 전면 개편
+
+#### 최종 accepted된 일부 요소
+
+- 하단 그라데이션
+- 속도/SET/휠/DM 배치 일부
+- `files/icons/steeringwheel.png` 활용
+
+관련 파일:
+
+- `selfdrive/ui/qt/onroad/hud.cc`
+- `selfdrive/ui/qt/onroad/hud.h`
+- `selfdrive/ui/qt/onroad/annotated_camera.cc`
+- `selfdrive/ui/qt/onroad/driver_monitoring.cc`
+- `selfdrive/ui/qt/onroad/buttons.cc`
+
+### 4-8. fullscreen 왼쪽 남색 띠 문제
+
+- onroad fullscreen일 때 왼쪽에 남색 띠가 남는 문제 존재
+- 여러 단계로 조정:
+  - 마진 제거
+  - overscan / left bias 조정
+  - 카메라 edge-to-edge 확장
+- 재부팅 후에도 잔여 픽셀이 남아 추가 조정
+- 현재는 크게 줄어든 상태이나, 완전한 근본 원인은 `camera frame + overlay` 조합에서 생긴 여백으로 판단됨
+
+관련 파일:
+
+- `selfdrive/ui/qt/onroad/annotated_camera.cc`
+
+### 4-9. offroad UI 전면 개편
+
+사용자 요구사항에 따라 offroad 홈을 크게 바꿨다.
+
+#### 기본 offroad 홈
+
+- 배경 전체 검정
+- 기본 sidebar 숨김
+- 좌상단 원형 설정 버튼
+- 타이틀: `안녕하세요 종혁님`
+- 설명: `오늘도 편안한 주행 되세요`
+- 아래 카드:
+  - `주행 시간`
+  - `주행 거리`
+  - `주행 횟수`
+
+#### 주행 종료 직후 offroad 홈
+
+- onroad -> offroad 전환 직후 summary mode로 진입
+- 타이틀: `주행이 종료되었습니다`
+- 설명: `수고하셨습니다`
+- 아래 카드:
+  - `주행 시간`
+  - `주행 거리`
+  - `오픈파일럿 사용 비율`
+
+#### 표시 시간
+
+- 최근 주행 summary는 10분 동안 유지
+- 이후 기본 greeting view로 자동 복귀
+
+#### 시각/상호작용 추가 수정
+
+- title / description 폰트 키우고 위로 올림
+- 카드 내부 라벨에 같이 먹던 사각형 border 제거
+- 설정 버튼 눌림 보정
+- Back 버튼과 설정 내부 버튼들 동작하도록 수정
+
+관련 파일:
+
+- `selfdrive/ui/qt/home.cc`
+- `selfdrive/ui/qt/home.h`
+- `selfdrive/ui/qt/window.cc`
+- `selfdrive/ui/qt/offroad/settings.h`
+
+추가 note:
+
+- UTM에서 최근 주행 요약을 강제로 띄우기 위한 preview 훅 존재
+  - `OFFROAD_SUMMARY_PREVIEW=1`
+  - 코드 위치: `selfdrive/ui/qt/home.cc`
+
+### 4-10. 이벤트 문구 / FCW / steering 관련 포팅
+
+#### a. `events_bf.py` 기준 events.py 반영
+
+- 프로젝트 루트의 `events_bf.py` 를 참고해 현재 브랜치 `events.py` 에 존재하는 이벤트들만 문구 반영
+- 일부는 현재 브랜치 의미가 달라서 의도적으로 미반영:
+  - `noGps`
+  - `canError`
+  - `accel35`
+  - `hal9000`
+- 관련 파일:
+  - `selfdrive/selfdrived/events.py`
+
+#### b. FCW 관련 커밋 참조 반영
+
+참고한 커밋:
+
+- `0b43e7f77e09ac2a4981444a778a60b264f3f568`
+- `6716db92917e9ddb0edd929aed76651c02a99c5f`
+- `3d906b18e9646fee3df3363774174943d0bb1af2`
+- `bcce25d409329486ec2e4d196979bd6cdd83b5fa`
+
+적용 내용:
+
+- TTC 기반 FCW 조건 보강
+- FCW 문구를 `전방 추돌 주의 / 전방 차량과 추돌 위험이 있습니다` 로 수정
+- `AudibleAlert.prompt` / duration 3s
+
+관련 파일:
+
+- `selfdrive/selfdrived/selfdrived.py`
+- `selfdrive/selfdrived/events.py`
+
+#### c. lead departing commit 참조 반영
+
+참고 커밋:
+
+- `99a430630430766562a610b6ced290836e3c275f`
+
+적용 내용:
+
+- `FrogPilotEventName.leadDeparting`
+- full-screen 형태로 맞춤
+
+관련 파일:
+
+- `selfdrive/selfdrived/events.py`
+
+#### d. steering 관련 sunnypilot 커밋 반영
+
+참고 커밋:
+
+- `6cdaee2491ac82529426a67a6b662496381a82c8`
+
+적용 내용:
+
+- `belowSteerSpeed` 문구 / full-screen / `VisualAlert.steerRequired`
+- `preLaneChangeLeft/Right` 문구 수정
+- `steerSaturated` 사운드 `warningSoft` 로 조정
+- `mici` override 쪽도 맞춤
+
+관련 파일:
+
+- `selfdrive/selfdrived/events.py`
+
+### 4-11. 사운드 동기화
+
+- sunnypilot `staging-n` 의 `selfdrive/assets/sounds` 와 현재 프로젝트 사운드를 비교/동기화
+- 결과적으로 주요 7개 사운드는 현재 프로젝트와 해시가 이미 동일했음
+- 즉 작업은 수행했지만, 실제 사운드 내용 차이는 거의 없었음
+
+관련 파일:
+
+- `selfdrive/assets/sounds/prompt.wav`
+- `selfdrive/assets/sounds/prompt_distracted.wav`
+- `selfdrive/assets/sounds/refuse.wav`
+- `selfdrive/assets/sounds/warning_immediate.wav`
+- `selfdrive/assets/sounds/warning_soft.wav`
+
+### 4-12. power monitoring 자동 종료 비활성화
+
+참고 커밋:
+
+- sunnypilot `22e9ea0155287c0fb7e7236ea1029371fdd2e057`
+
+적용 내용:
+
+- offroad 시간/전압/잔량 조건에 따른 자동 종료를 비활성화
+- `should_shutdown()` 이 `False` 를 반환하도록 조정
+
+관련 파일:
+
+- `system/hardware/power_monitoring.py`
+
+### 4-13. 콤마 기기 `mapd` / launch 관련 런타임 문제 해결
+
+#### a. `process not running mapd`
+
+- onroad 진입 후 engage가 안 되고 `process not running mapd` 이벤트 발생
+- 원인:
+  - manager가 죽은 프로세스의 stale `proc` 핸들을 잡고 있어 재시작 실패
+- 수정:
+  - stale process cleanup 로직 보완
+
+관련 파일:
+
+- `system/manager/process.py`
+
+#### b. Python runtime 경로 문제
+
+- launch path가 잘못된 Python 을 타며 재시작 흐름이 불안정
+- `/usr/local/venv/bin/python` 우선 사용하도록 수정
+
+관련 파일:
+
+- `launch_chffrplus.sh`
+
+### 4-14. `frogpilot_backups.py` race fix
+
+- UTM에서 `openpilot crashed` 팝업 원인을 확인해보니 실제로는 toggle backup race로 `FileExistsError` 발생
+- `_in_progress` backup 폴더 이름 충돌에 약했음
+- 임시 이름 중복/기존 목적지 존재 상황에 더 안전하게 대응하도록 수정
+
+관련 파일:
+
+- `frogpilot/common/frogpilot_backups.py`
+
+### 4-15. checked-in UI 바이너리와 device runtime env 문제
+
+이 구간은 특히 중요하다.
+
+#### a. UI 바이너리 체크인
+
+- 현재 커스텀 UI 상태를 `selfdrive/ui/ui` 바이너리로 git에 포함시키기 위해 체크인
+- 관련 커밋:
+  - `c79b911e` `Check in compiled UI binary`
+
+관련 파일:
+
+- `selfdrive/ui/ui`
+
+#### b. 사고: git pull 후 기기에서 UI가 안 뜨는 문제
+
+- 로컬/수동 배포에서는 되던 것이, `git pull` 후 기기에서는 `ui` 실행 실패
+- 원인:
+  - 체크인된 `ui` 바이너리가 `libyuv` 런타임을 필요로 했음
+  - `launch_env.sh` 에 weston/wayland 환경이 없어 display 연결 실패
+
+증상:
+
+- 실제 기기 전체 재부팅처럼 보였지만, 정확히는 openpilot launch loop / ui loop
+
+#### c. 해결
+
+- `launch_env.sh` 에 weston/wayland 환경 변수 추가
+- `third_party/libyuv/larch64/lib` 아래 runtime library 포함
+- 이후 `git pull` 기반 업데이트도 정상화
+
+관련 커밋:
+
+- `25b258d9` `Fix device UI runtime environment`
+
+관련 파일:
+
+- `launch_env.sh`
+- `third_party/libyuv/larch64/lib/libyuv.so`
+- `third_party/libyuv/larch64/lib/libyuv.so.0`
+- `third_party/libyuv/larch64/lib/libyuv.so.0.0.1883`
+
+### 4-16. blindspot 아이콘 기능 추가
+
+이 기능은 현재 HEAD `8ac7cfd3` 기준 반영돼 있다.
+
+#### 기능 요구사항
+
+- 사각지대 차량 감지 시 좌우 화면 가장자리에 blindspot 아이콘 표시
+- 같은 방향 깜빡이와 동시에 들어오면 아이콘이 빠르게 점멸
+
+#### 구현 내용
+
+- 좌우 고정 아이콘 로딩:
+  - `files/icons/blindspot_left.png`
+  - `files/icons/blindspot_right.png`
+- `paintBlindspotIcons(QPainter &p)` 추가
+- 실제 조건:
+  - `blindspotLeft/right` 는 `carState`
+  - `blinkerLeft/right` 도 `carState`
+  - `blindspot && same-side blinker` 이면 빠른 점멸
+- 점멸 간격:
+  - 약 120ms
+
+관련 파일:
 
 - `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
-  - removed speed-limit/pending-limit/source drawing under `SET`
-  - includes `QPainterPath` fix that was needed for one build path
-- `launch_chffrplus.sh`
-  - use correct Python runtime on comma device
-- `launch_env.sh`
-  - add local `libyuv` runtime path for compatible binaries
-- `selfdrive/modeld/SConscript`
-  - do not build QCOM tinygrad kernels on non-TICI arm64 UTM
-- `selfdrive/modeld/modeld.py`
-  - `desire` / `desire_pulse` compatibility and input-name mapping
-- `selfdrive/ui/mici/onroad/hud_renderer.py`
-  - Python fallback `MAX` -> `SET`
-- `selfdrive/ui/onroad/augmented_road_view.py`
-  - remove onroad border in Python renderer
-- `selfdrive/ui/onroad/hud_renderer.py`
-  - Python fallback `MAX` -> `SET`
-- `selfdrive/ui/qt/onroad/alerts.cc`
-  - alert redraw behavior, chips, `ForceOnroad` fallback
-  - simplified floating event-card redesign
-- `selfdrive/ui/qt/onroad/alerts.h`
-  - alert state storage support for the redraw changes
-- `selfdrive/ui/qt/onroad/annotated_camera.cc`
-  - hide screen recorder
-  - set disengaged grayscale/dim camera filter
-- `selfdrive/ui/qt/onroad/buttons.cc`
-  - wheel icon styling/tint changes
-- `selfdrive/ui/qt/onroad/buttons.h`
-  - button state support
-- `selfdrive/ui/qt/onroad/driver_monitoring.cc`
-  - full DM widget redesign
-- `selfdrive/ui/qt/onroad/driver_monitoring.h`
-  - DM renderer state changes
-- `selfdrive/ui/qt/onroad/hud.cc`
-  - `MAX` -> `SET`
-  - compact `SET` layout preserved
-  - large redesign reverted
-- `selfdrive/ui/qt/onroad/model.cc`
-  - gray-tone path in disengaged state
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h`
 - `selfdrive/ui/qt/onroad/onroad_home.cc`
-  - remove Qt onroad outer border/margins
-- `selfdrive/ui/qt/widgets/cameraview.cc`
-  - camera fragment shader grayscale + dimming support
-- `selfdrive/ui/qt/widgets/cameraview.h`
-  - frame filter controls for grayscale/brightness
-- `selfdrive/ui/ui.cc`
-  - `ForceOnroad` / `ForceOffroad` param fallback
-- `system/manager/process.py`
-  - stale-process restart fix for manager
-- `tools/sim/bridge/metadrive/metadrive_bridge.py`
-  - MetaDrive render support for UTM testing
-- `selfdrive/test/__init__.py`
-  - test package support for helper import
-- `selfdrive/test/helpers.py`
-  - seed params/calibration for simulator-style bring-up
-- `tools/utm/force_onroad_preview.sh`
-  - UTM-only onroad preview launcher
 
-## Current recommended workflow
+#### 위치 조정 및 geometry 보정
 
-### Local edit -> UTM preview
+- 오른쪽 아이콘이 sidebar open/close 후 중앙으로 끌려오는 문제 발생
+- `frogpilot_nvg->setGeometry(rect())` 반영
+- 아이콘 좌표 기준을 overlay 내부 폭이 아니라 top-level width 기준으로 계산
+- 오른쪽 마진은 여러 번 튜닝 후 현재 값 기준으로 정리
 
-Use this when the goal is to visually inspect UI changes.
+#### UTM preview 전용 환경값
 
-1. Edit files locally in this repo.
-2. Sync the changed files to the UTM repo.
-3. In UTM:
-   - build `selfdrive/ui/ui`
-   - copy it to `selfdrive/ui/ui.utm`
-4. Run:
-   - `tools/utm/force_onroad_preview.sh`
-5. This should restart openpilot inside UTM and relaunch the preview UI.
+`BLINDSPOT_PREVIEW` 지원값:
 
-Notes:
-- This is an openpilot restart, not a VM reboot.
-- `frogpilotPlan` is still unreliable in UTM, so the preview depends on the direct `ForceOnroad` fallback.
-- This preview is best for UI layout checks, not for validating every live signal.
+- `left`
+- `right`
+- `both`
+- `1`
+- `left-blink`
+- `right-blink`
+- `both-blink`
 
-### Local edit -> Comma device deployment
+주의:
 
-Use this when the goal is to see the change on the actual device.
+- UTM에서 preview는 실제 차 신호가 아니라 환경변수로 강제 표시하는 경로
+- 실제 blindspot/blinker 조건과는 별개
+- 이 preview 경로는 종종 offroad 전환, stale `ui.utm`, ForceOnroad 초기화, SSH timeout 때문에 불안정했음
 
-Recommended approach:
-- do not rely on comma-device native compilation unless absolutely necessary
-- building directly on comma was unstable and caused reboots
-- instead, continue using the previously established UTM/device-compatible build flow
-- after producing the device-compatible `selfdrive/ui/ui`, copy it to:
-  - `/data/openpilot/selfdrive/ui/ui`
-- keep a backup of the previous device binary before replacing it
+#### 현재 검증 상태
 
-Notes:
-- the repo alone does not encode every external environment tweak used during ABI-aligned device builds
-- `launch_env.sh` now expects `third_party/libyuv/larch64/lib` to be available when needed
+- 로컬 repo HEAD와 콤마 기기 repo HEAD 모두 `8ac7cfd3`
+- 기기 소스에 blindspot 관련 코드가 존재하는 것 확인
+- 기기 `selfdrive/ui/ui` 바이너리 안에 아래 문자열 존재 확인:
+  - `BLINDSPOT_PREVIEW`
+  - `blindspot_left.png`
+  - `blindspot_right.png`
+- 즉 코드/바이너리 반영은 되었음
+- 다만 실제 차량 주행 중 blindspot 감지 + blinker 상황에서의 최종 현장 검증은 별도 필요
 
-## Current UTM notes
+### 4-17. 데모 데이터 preview 훅
 
-- UTM preview is currently best treated as a visual preview environment, not a full-fidelity driving environment.
-- A stable visual preview path exists even when simulator pieces are shaky.
-- Current preferred preview assumptions:
-  - use Honda Civic 2022 for simulator-style compatibility
-  - keep openpilot longitudinal disabled when needed for preview consistency
-- Forcing Chevrolet Traverse in UTM preview was not a real simulator success path because the simulator CAN path is effectively Honda-oriented.
+onroad preview 시 화면이 비어 보이는 문제를 완화하기 위해 일부 demo 값 훅이 들어갔다.
 
-## Known problems and unfinished items
+- `ForceOnroad` 이고 실제 `carState`/`driverState` 가 아직 안 들어온 preview 상황에서만:
+  - 현재 속도 demo 값
+  - SET 속도 demo 값
+  - DM, wheel 표시 강제
 
-### 1. `frogpilotPlan` is still unreliable in UTM
+중요:
 
-- The UI preview is working around this with direct `Params()` fallback.
-- This should be fixed properly later if full FrogPilot message-driven preview is needed.
+- 이 demo 값은 실제 onroad 주행 경로에는 적용되지 않음
+- preview 전용 분기
 
-### 2. Headless MetaDrive / OpenCL path in UTM is still unstable
+관련 파일:
 
-- During bridge testing, `pyopencl/pocl` kernel build issues appeared.
-- This means simulator-backed preview can still stall or be incomplete.
-- If someone later wants a richer UTM environment, this needs a dedicated fix.
+- `selfdrive/ui/qt/onroad/hud.cc`
+- `selfdrive/ui/qt/onroad/driver_monitoring.cc`
+- `selfdrive/ui/qt/onroad/buttons.cc`
 
-### 3. Latest disengaged visuals are only verified in UTM
+## 5. 현재 repo / 기기 / UTM 상태 정리
 
-- Camera grayscale/dim and gray path were implemented and previewed in UTM.
-- They were not yet synced and deployed to the comma device when this file was written.
-- If the user wants those on the comma device too, that is still a follow-up task.
+### 5-1. 현재 원격 브랜치
 
-### 4. Speed limit widget was removed, not repositioned
+- `origin/testing-v1`
+- HEAD: `8ac7cfd3`
 
-- The current choice was to remove the speed-limit block entirely from that area.
-- If someone later wants it back, it needs a fresh layout pass instead of simply re-enabling old paint calls.
+### 5-2. 현재 콤마 기기 확인 사항
 
-### 5. The larger `SET` redesign was rejected
+2026-03-18 확인 기준:
 
-- Do not resurrect the large-card version unless the user explicitly asks again.
-- The current accepted state is the smaller compact `SET` design.
+- `/data/openpilot` HEAD도 `8ac7cfd`
+- 기기 `ui` 프로세스 실행 중 확인
+- 소스와 바이너리 모두 blindspot 문자열 포함 확인
 
-### 6. The screen recorder is hard-hidden
+### 5-3. 현재 UTM 상태 특성
 
-- This is not a temporary param-only hide anymore in the Qt path.
-- If the recorder needs to return, it should be redesigned intentionally instead of just flipped back on.
+- UTM은 "실차와 동일한 런타임" 이 아니라 "host preview 환경" 으로 보는 게 맞음
+- 가장 안정적인 확인 방법:
+  - `tools/utm/force_onroad_preview.sh`
+  - 필요 시 `BLINDSPOT_PREVIEW=...`
+- 단, UTM에서는 다음 문제가 반복적으로 있었다:
+  - `ForceOnroad` 가 manager start 때 지워짐
+  - SSH `banner exchange timeout`
+  - 예전 `ui.utm` 창이 남아 새 빌드를 못 보는 착시
+  - `frogpilotPlan` 이 항상 안정적으로 살아 있지 않음
 
-### 7. Local working tree contains generated junk files
+## 6. 현재 유지해야 하는 중요한 결정 사항
 
-- Current local status also includes things that are not part of the real handoff:
-  - `.DS_Store`
-  - `__pycache__`
-- These were not cleaned in this pass.
-- If someone prepares a PR or commit later, they should clean or ignore those first.
+- 이벤트 렌더는 stock renderer 유지
+- large `SET` 카드 실험은 되살리지 말 것
+- SVG 기반 onroad 대형 개편은 되살리지 말 것
+- offroad 커스텀 홈/최근 주행 요약 구조는 현재 accepted 상태
+- 기기에서 직접 `scons selfdrive/ui/ui` 빌드는 비권장
+- checked-in `ui` 바이너리를 쓰는 경우 `launch_env.sh` 와 `libyuv` 런타임을 반드시 같이 유지할 것
 
-## Suggested next tasks
+## 7. 앞으로 작업 시 권장 workflow
 
-If another engineer picks this up, the most logical next steps are:
+### UTM 미리보기
 
-1. Decide whether the latest disengaged visuals should also be deployed to the comma device.
-2. If yes, run the device-compatible UTM build/deploy flow and verify on actual hardware.
-3. If the user wants richer UTM preview, fix the `frogpilotPlan` and/or `pyopencl/pocl` simulator issues.
-4. If speed limit data needs to come back, redesign the `SET` cluster and lower-left/upper HUD layout first.
-5. Clean the working tree (`.DS_Store`, `__pycache__`) before any formal commit.
+1. 로컬에서 소스 수정
+2. UTM 저장소에 동기화
+3. UTM에서 host UI 빌드
+4. `tools/utm/force_onroad_preview.sh` 로 onroad preview
+5. 필요 시 env:
+   - `BLINDSPOT_PREVIEW=both`
+   - `BLINDSPOT_PREVIEW=both-blink`
+   - `OFFROAD_SUMMARY_PREVIEW=1`
 
-## Final caution
+### 실제 콤마 기기 배포
 
-There are both UI changes and runtime/process changes in this working tree.
+1. 로컬 수정 완료
+2. 필요한 경우 device-ABI `selfdrive/ui/ui` 확인
+3. `git push` 또는 직접 배포
+4. 기기에서 `git pull` 후 `ui` / `mapd` 상태 확인
+5. display/libyuv 문제 시 `launch_env.sh` 확인
 
-That means this is not "just a skinning branch" anymore.
+## 8. 현재 남아 있는 로컬 untracked 참고 파일
 
-Anyone continuing should review these files carefully before committing or cherry-picking:
-- `launch_chffrplus.sh`
+아래는 현재 로컬에 있지만 커밋하지 않은 참고/잡파일들이다.
+다음 작업자가 PR/추가 커밋 전 반드시 의식하고 정리해야 한다.
+
+- `.DS_Store`
+- 각종 `__pycache__`
+- `events_bf.py`
+- `files/Group 3.svg`
+- `files/Group 10.svg`
+- `files/Group 11.png`
+- `files/icons/collision.png`
+- `files/icons/handon.png`
+- `files/icons/lanecrossing.png`
+- `files/icons/lfa.png`
+- 기타 한글 파일명 SVG 레퍼런스
+- `tools/utm/cycle_alert_previews.sh`
+- `tools/utm/cycle_real_event_previews.sh`
+
+중요:
+
+- blindspot용 `blindspot_left.png`, `blindspot_right.png` 는 이미 커밋됨
+- 나머지 아이콘/레퍼런스 이미지는 아직 공식 반영 대상 아님
+
+## 9. 다음 작업자가 가장 먼저 봐야 할 파일
+
+UI 쪽:
+
+- `selfdrive/ui/qt/onroad/hud.cc`
+- `selfdrive/ui/qt/onroad/annotated_camera.cc`
+- `selfdrive/ui/qt/onroad/model.cc`
+- `selfdrive/ui/qt/onroad/alerts.cc`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- `selfdrive/ui/qt/home.cc`
+
+Runtime / deploy 쪽:
+
 - `launch_env.sh`
-- `selfdrive/modeld/SConscript`
-- `selfdrive/modeld/modeld.py`
+- `launch_chffrplus.sh`
 - `system/manager/process.py`
+- `system/hardware/power_monitoring.py`
+- `tools/utm/force_onroad_preview.sh`
 
-Those files affect runtime behavior beyond pure UI appearance.
+## 10. 가장 중요한 함정 요약
+
+- `ForceOnroad` 는 manager 시작 전에 넣으면 지워진다
+- UTM에서 `ui.utm` 이 떠 있다고 해서 새 빌드를 보고 있는 건 아닐 수 있다
+- 직접 기기 빌드는 리소스/안정성 문제로 종종 실패한다
+- checked-in `ui` 바이너리만 올리고 runtime env를 안 올리면 기기에서 launch loop가 날 수 있다
+- blindspot preview가 UTM에서 불안정하다고 해서 실제 기기 로직까지 실패라고 단정하면 안 된다
+- 실제 차량 신호 기반 기능은 최종적으로 콤마 기기에서 확인해야 한다
+
+이 문서는 여기까지 작업한 모든 주요 변경과 시행착오를 기록한 기준 문서다.
+새 작업을 시작할 때는 `RELEASES.md` 가 아니라 이 파일부터 읽는 것을 권장한다.
