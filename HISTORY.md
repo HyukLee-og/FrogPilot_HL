@@ -2,6 +2,43 @@
 
 최종 갱신: 2026-03-18
 
+## 추가: 2026-03-18 자동밝기 하한 / resumeRequired 우선순위 조정
+
+이 섹션은 주행 중 체감 밝기와 stop-and-go 상황 alert 우선순위에 대한 후속 피드백을 반영한 수정이다.
+
+### 수정 배경
+
+- 자동밝기가 주변이 그렇게 어둡지 않은데도 너무 깊게 떨어져 화면이 과하게 어두워진다는 피드백이 있었음
+- `resumeRequired` 가 떠 있는 동안 `greenLight`, `leadDeparting` 알림이 화면에서 가려져, 정차 후 재출발 상황에서 중요한 시각 피드백이 묻힘
+- 정차 타이머는 기존 변경 후 `시:분` 느낌으로 읽히는 상태였고, `resumeRequired` 중에는 타이머보다 현재 속도 `0` 표시가 더 직관적이라는 요구가 있었음
+
+### 수정 내용
+
+- `selfdrive/ui/ui.cc`
+  - 자동밝기 하한용 상수 추가
+    - `AUTO_BRIGHTNESS_DIM_FLOOR = 8.0f`
+    - `AUTO_BRIGHTNESS_DARK_THRESHOLD = 8.0f`
+  - 카메라 노출 기반 `raw_light_sensor` 값을 따로 보존
+  - `raw_light_sensor` 가 정말 낮은 경우가 아니면 auto brightness minimum 을 `8` 로 clamp 하도록 변경
+  - 결과적으로 일반적인 저조도에서는 화면 밝기가 `8` 아래로 떨어지지 않고, 진짜 어두운 상황만 예외 처리됨
+- `selfdrive/ui/qt/onroad/alerts.cc`
+  - `selfdriveState` alert 가 `resumeRequired` 인 경우에 한해, `frogpilotSelfdriveState` 의 `greenLight` 또는 `leadDeparting` alert 가 존재하면 그것을 화면상 우선 표시하도록 변경
+  - 즉 stop-and-go 상황에서 `resumeRequired` 가 계속 떠 있어도 `greenLight` / `leadDeparting` 가 시각적으로 덮어쓰도록 수정
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+  - 정차 타이머 포맷을 `분:초` 로 변경
+  - `resumeRequired` alert 가 활성 상태일 때는 standstill timer 를 무효화하고, 하단에는 타이머 대신 현재 속도 `0` 이 다시 표시되도록 변경
+
+### 빌드 / 배포 결과
+
+- UTM에서 최신 수정본으로 device-ABI UI를 다시 빌드
+- 새 기기용 UI 해시:
+  - `52fba2410153a3bd4ef6dc216ee9a6652e8f7278`
+- 콤마 기기 `192.168.0.11` 에 새 바이너리와 최신 소스 패치를 같이 배포
+- 배포 후 확인:
+  - `./ui` 실행 중
+  - `./mapd` 실행 중
+  - 기기 소스 `selfdrive/ui/ui.cc` 에 밝기 하한 상수와 clamp 로직 반영 확인
+
 ## 추가: 2026-03-18 주행 중 새로고침 / 부팅 안정성 수정
 
 이 섹션은 실제 콤마 기기 주행 중 `화면이 한 번 새로고침되는 느낌` 이 있었다는 피드백 이후, 그 원인 분석과 안정성 수정 내역을 정리한 것이다.

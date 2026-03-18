@@ -19,6 +19,8 @@ constexpr float AUTO_BRIGHTNESS_MIN = 1.0f;
 constexpr float AUTO_BRIGHTNESS_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_GAMMA = 0.8f;
+constexpr float AUTO_BRIGHTNESS_DIM_FLOOR = 8.0f;
+constexpr float AUTO_BRIGHTNESS_DARK_THRESHOLD = 8.0f;
 constexpr double STARTED_FALL_DEBOUNCE_S = 5.0;
 
 static void update_sockets(UIState *s) {
@@ -232,7 +234,8 @@ void Device::updateBrightness(const UIState &s, const FrogPilotUIState &fs) {
 
   float clipped_brightness = offroad_brightness;
   if (s.scene.started && s.scene.light_sensor >= 0) {
-    clipped_brightness = s.scene.light_sensor;
+    const float raw_light_sensor = s.scene.light_sensor;
+    clipped_brightness = raw_light_sensor;
 
     // CIE 1931 - https://www.photonstophotos.net/GeneralTopics/Exposure/Psychometric_Lightness_and_Gamma.htm
     if (clipped_brightness <= 8) {
@@ -241,7 +244,8 @@ void Device::updateBrightness(const UIState &s, const FrogPilotUIState &fs) {
       clipped_brightness = std::pow((clipped_brightness + 16.0) / 116.0, 3.0);
     }
 
-    clipped_brightness = std::clamp(100.0f * clipped_brightness, AUTO_BRIGHTNESS_MIN, AUTO_BRIGHTNESS_MAX);
+    const float auto_brightness_min = raw_light_sensor > AUTO_BRIGHTNESS_DARK_THRESHOLD ? AUTO_BRIGHTNESS_DIM_FLOOR : AUTO_BRIGHTNESS_MIN;
+    clipped_brightness = std::clamp(100.0f * clipped_brightness, auto_brightness_min, AUTO_BRIGHTNESS_MAX);
   }
 
   int brightness = brightness_filter.update(clipped_brightness);

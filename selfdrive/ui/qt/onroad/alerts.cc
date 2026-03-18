@@ -101,10 +101,20 @@ OnroadAlerts::Alert OnroadAlerts::getAlert(const SubMaster &sm, const SubMaster 
     a = Alert{ss.getAlertText1().cStr(), ss.getAlertText2().cStr(),
               ss.getAlertType().cStr(), ss.getAlertSize(), ss.getAlertStatus()};
 
+    const Alert frogpilot_alert = Alert{
+      fpss.getAlertText1().cStr(), fpss.getAlertText2().cStr(),
+      fpss.getAlertType().cStr(),
+      static_cast<cereal::SelfdriveState::AlertSize>(fpss.getAlertSize()),
+      static_cast<cereal::SelfdriveState::AlertStatus>(fpss.getAlertStatus())
+    };
+    const bool selfdrive_resume_required = a.type.contains("resumeRequired", Qt::CaseInsensitive);
+    const bool frogpilot_priority_override =
+      frogpilot_alert.type.contains("greenLight", Qt::CaseInsensitive) ||
+      frogpilot_alert.type.contains("leadDeparting", Qt::CaseInsensitive);
+
     // FrogPilot variables
-    if (a.size == cereal::SelfdriveState::AlertSize::NONE) {
-      a = Alert{fpss.getAlertText1().cStr(), fpss.getAlertText2().cStr(),
-                fpss.getAlertType().cStr(), static_cast<cereal::SelfdriveState::AlertSize>(fpss.getAlertSize()), static_cast<cereal::SelfdriveState::AlertStatus>(fpss.getAlertStatus())};
+    if (a.size == cereal::SelfdriveState::AlertSize::NONE || (selfdrive_resume_required && frogpilot_priority_override && frogpilot_alert.size != cereal::SelfdriveState::AlertSize::NONE)) {
+      a = frogpilot_alert;
     }
   }
 

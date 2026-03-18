@@ -240,9 +240,13 @@ void FrogPilotAnnotatedCameraWidget::updateState(const UIState &s, const FrogPil
     pendingLimitTimer.invalidate();
   }
 
+  const bool resume_required_active = QString::fromUtf8(selfdriveState.getAlertType().cStr()).contains("resumeRequired", Qt::CaseInsensitive);
   bool standstill_preview_ok = false;
   const int standstill_preview = qEnvironmentVariableIntValue("STANDSTILL_PREVIEW", &standstill_preview_ok);
-  if (standstill_preview_ok && standstill_preview >= 0) {
+  if (resume_required_active) {
+    standstillDuration = 0;
+    standstillTimer.invalidate();
+  } else if (standstill_preview_ok && standstill_preview >= 0) {
     standstillDuration = standstill_preview;
     standstillTimer.invalidate();
   } else if (frogpilot_scene.standstill && frogpilot_toggles.value("stopped_timer").toBool()) {
@@ -1094,9 +1098,9 @@ void FrogPilotAnnotatedCameraWidget::paintSpeedLimitSources(QPainter &p) {
 void FrogPilotAnnotatedCameraWidget::paintStandstillTimer(QPainter &p) {
   p.save();
 
-  const int hours = standstillDuration / 3600;
-  const int minutes = (standstillDuration % 3600) / 60;
-  const QString timer_text = QString("%1:%2").arg(hours).arg(minutes, 2, 10, QChar('0'));
+  const int minutes = standstillDuration / 60;
+  const int seconds = standstillDuration % 60;
+  const QString timer_text = QString("%1:%2").arg(minutes).arg(seconds, 2, 10, QChar('0'));
 
   const int group_top = rect().height() - 246;
   const int center_x = rect().center().x();

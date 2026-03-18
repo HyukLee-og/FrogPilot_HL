@@ -1,3 +1,17 @@
+Patch Update (2026-03-18, auto-brightness and alert priority)
+==============================================================
+* Onroad alert behavior
+  * Allowed `greenLight` and `leadDeparting` FrogPilot alerts to visually override `resumeRequired` so stop-and-go prompts still surface while auto hold is active
+  * Kept the `resumeRequired` auto-hold layout work and updated its interaction with the standstill timer so current speed `0` is shown instead of the timer while `resumeRequired` is active
+* Standstill timer
+  * Reformatted the lower onroad standstill timer from the previous hour/minute style to `분:초` display
+  * Disabled the standstill timer during `resumeRequired` so the stop-state speed presentation remains clean
+* Auto brightness
+  * Added a new automatic brightness floor so normal low-light scenes no longer dim below `8`, while truly dark conditions can still drop under that threshold
+* Packaging
+  * Rebuilt and deployed the updated device UI binary from UTM
+  * Current checked-in device UI hash: `52fba2410153a3bd4ef6dc216ee9a6652e8f7278`
+
 Hotfix Update (2026-03-18)
 ==========================
 * Runtime stability
