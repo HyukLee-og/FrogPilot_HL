@@ -19,8 +19,8 @@ constexpr float AUTO_BRIGHTNESS_MIN = 1.0f;
 constexpr float AUTO_BRIGHTNESS_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_GAMMA = 0.8f;
-constexpr float AUTO_BRIGHTNESS_DIM_FLOOR = 8.0f;
-constexpr float AUTO_BRIGHTNESS_DARK_THRESHOLD = 8.0f;
+constexpr float AUTO_BRIGHTNESS_DIM_FLOOR = 10.0f;
+constexpr float AUTO_BRIGHTNESS_DARK_THRESHOLD = 4.0f;
 constexpr double STARTED_FALL_DEBOUNCE_S = 5.0;
 
 static void update_sockets(UIState *s) {

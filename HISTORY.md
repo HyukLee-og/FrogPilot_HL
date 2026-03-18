@@ -1,6 +1,63 @@
 # frogpilot-testing-v1 작업 이력 / 인수인계 문서
 
-최종 갱신: 2026-03-18
+최종 갱신: 2026-03-19
+
+## 추가: 2026-03-19 드라이빙 모델 다운로드 복구 / 밝기 재조정
+
+이 섹션은 FrogPilot의 `Driving Model` 관리 기능이 실제로 동작하지 않던 문제와, 야간 자동밝기가 여전히 과하게 어둡다는 피드백 이후의 수정 내역을 정리한다.
+
+### 증상
+
+- offroad `Driving Controls` 안에서 `DRIVING MODEL` 버튼 자체가 보이지 않았음
+- 기기 UI에는 `Downloading...` 이라고 표시되지만, 실제 모델 다운로드/컴파일 프로세스는 돌지 않았음
+- `DownloadAllModels` 를 눌러도 `/data/models` 에 결과물이 생기지 않거나, stale memory params 때문에 계속 진행 중처럼 보이는 상태가 발생했음
+- 이전 밝기 하한 패치 후에도, 가로등이 있고 주변이 꽤 밝은 편인 상황에서 화면이 여전히 너무 어둡다는 피드백이 있었음
+
+### 원인 판단
+
+- `frogpilot/ui/qt/offroad/frogpilot_settings.cc` 에서 `Driving Controls` 패널의 `DRIVING MODEL` 버튼이 강제로 숨겨져 있었음
+- `frogpilot/tools/compile_models.py` 는 현재 브랜치 구조와 맞지 않는 import / metadata script 경로 / 출력 디렉터리를 사용하고 있어, UI에서 memory param 을 써도 실제 worker 경로가 정상 동작하지 않았음
+- `frogpilot/frogpilot_process.py` 쪽도 모델 다운로드 요청을 실제로 소비하는 살아있는 offroad 처리 경로가 없어서, UI 상태값만 `Downloading...` 으로 남는 경우가 있었음
+- 자동밝기는 이전 패치에서 하한을 올렸지만, `완전 어두움` 판정이 아직 너무 느슨해서 일반 저조도 환경도 과하게 어둡게 취급될 수 있었음
+
+### 수정 내용
+
+- `frogpilot/ui/qt/offroad/frogpilot_settings.cc`
+  - `DRIVING MODEL` 버튼을 다시 보이게 변경
+- `frogpilot/tools/compile_models.py`
+  - 끊겨 있던 모델 다운로드/컴파일 경로를 현재 브랜치 기준으로 전면 정리
+  - `selfdrive/modeld/get_model_metadata.py` 를 사용하도록 수정
+  - 다운로드한 ONNX는 `/data/models/uncompiled_downloads` 에 받고, 최종 tinygrad/metadata 산출물은 `/data/models` 바로 아래에 저장하도록 변경
+  - GitHub/GitLab 원격 목록을 읽어 실제로 호스팅된 모델만 다운로드 대상으로 필터링하도록 수정
+  - 단일 모델 요청(`ModelToDownload`)과 전체 다운로드(`DownloadAllModels`) 모두 현재 memory param 체계와 맞게 동작하도록 정리
+- `frogpilot/frogpilot_process.py`
+  - offroad 상태에서 `DownloadAllModels`, `ModelToDownload`, `UpdateTinygrad` 요청이 있으면 `process_model_download_request(...)` 를 실제로 실행하도록 연결
+  - silent background thread failure 를 피하기 위해 모델 다운로드는 사용자 요청 기반 offroad 작업으로 inline 처리되게 변경
+- `selfdrive/modeld/modeld.py`
+  - 선택된 `DrivingModel` 이 `/data/models/<model>_*` 파일 세트를 모두 갖고 있으면, built-in default 대신 다운로드된 tinygrad vision/policy + metadata 를 사용하도록 연결
+  - 파일이 없거나 세트가 불완전하면 기존 기본 모델로 안전하게 fallback
+- `selfdrive/ui/ui.cc`
+  - 자동밝기 하한을 최종 `10` 으로 조정
+  - `완전 어두움` 판정 기준은 `4` 로 더 보수적으로 내려, 아주 어두운 상황에만 `10` 아래로 내려가게 변경
+
+### 실기 확인 / 진행 결과
+
+- 기기 `192.168.0.11` 에서 stale `DownloadAllModels` 상태를 정리한 뒤, `steam-powered` 단일 다운로드/컴파일을 직접 실행해 끝까지 성공시켰음
+- 생성 확인 파일:
+  - `/data/models/steam-powered_driving_policy_metadata.pkl`
+  - `/data/models/steam-powered_driving_policy_tinygrad.pkl`
+  - `/data/models/steam-powered_driving_vision_metadata.pkl`
+  - `/data/models/steam-powered_driving_vision_tinygrad.pkl`
+- 완료 후 memory params 상태:
+  - `ModelToDownload` 비움
+  - `ModelDownloadProgress = Downloaded!`
+- 최신 기기용 UI 바이너리도 다시 빌드/배포하여, 새 밝기 하한(`10`) 및 어두움 기준(`4`) 이 반영된 상태로 기기에서 `ui`, `mapd` 정상 실행 확인
+
+### 비고
+
+- `AvailableModels` 목록에는 실제 원격에 없는 이름도 남아 있어, UI 선택 목록과 실제 다운로드 가능한 모델 목록 사이에 차이가 존재할 수 있음
+- 현재는 downloader 쪽에서 원격 호스팅 여부를 필터링하므로, UI에서 잘못된 모델을 눌러도 무한 진행 대신 실패/무시 쪽으로 정리되는 상태
+- 이번 수정으로 `steam-powered` 는 실제 사용 가능한 컴파일 세트까지 내려받았고, 이후 `Driving Model` 선택 메뉴에서 해당 모델을 선택해 사용할 수 있는 기반이 갖춰짐
 
 ## 추가: 2026-03-18 자동밝기 하한 / resumeRequired 우선순위 조정
 

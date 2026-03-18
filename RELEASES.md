@@ -1,3 +1,17 @@
+Patch Update (2026-03-19, driving model download and brightness tuning)
+======================================================================
+* Driving model management
+  * Re-enabled the hidden `DRIVING MODEL` button in FrogPilot offroad settings so model management is reachable from the device UI again
+  * Fixed the FrogPilot driving-model download worker path so `DownloadAllModels`, `ModelToDownload`, and `UpdateTinygrad` requests are actually consumed offroad instead of getting stuck at `Downloading...`
+  * Reworked model compilation/download flow to use the current `selfdrive/modeld/get_model_metadata.py` path, write compiled outputs directly into `/data/models`, and filter downloads to models that are actually hosted remotely
+  * Connected `selfdrive/modeld/modeld.py` to load downloaded `/data/models/<model>_*` driving vision/policy artifacts when a non-default driving model is selected
+  * Verified a fresh single-model download/compile of `steam-powered` on comma and produced the full policy/vision tinygrad + metadata set under `/data/models`
+* Auto brightness
+  * Finalized the latest brightness floor tuning so non-dark scenes no longer dim below `10`
+  * Tightened the `truly dark` threshold to `4`, making sub-10 brightness possible only in much darker conditions than before
+* Packaging
+  * Rebuilt and deployed the current device UI binary after the brightness retune and driving-model UI changes
+
 Patch Update (2026-03-18, auto-brightness and alert priority)
 ==============================================================
 * Onroad alert behavior

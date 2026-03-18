@@ -16,6 +16,7 @@ from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, Frog
 from openpilot.frogpilot.controls.frogpilot_planner import FrogPilotPlanner
 from openpilot.frogpilot.system.frogpilot_stats import send_stats
 from openpilot.frogpilot.system.frogpilot_tracking import FrogPilotTracking
+from openpilot.frogpilot.tools.compile_models import process_model_download_request
 
 ASSET_CHECK_RATE = (1 / DT_MDL)
 STARTED_FALL_DEBOUNCE_S = 5.0
@@ -34,11 +35,17 @@ def debounce_started_state(raw_started: bool, effective_started: bool, started_f
 
   return now_monotonic - started_false_since < STARTED_FALL_DEBOUNCE_S, started_false_since
 
-def check_assets(now, theme_manager, thread_manager, params, params_memory, frogpilot_toggles):
+def check_assets(now, started, theme_manager, thread_manager, params, params_memory, frogpilot_toggles):
   for asset_type, asset_param in THEME_COMPONENT_PARAMS.items():
     asset_to_download = params_memory.get(asset_param)
     if asset_to_download:
       thread_manager.run_with_lock(theme_manager.download_theme, (asset_type, asset_to_download, asset_param, frogpilot_toggles))
+
+  if not started:
+    if params_memory.get_bool("DownloadAllModels") or params_memory.get("ModelToDownload") or params_memory.get_bool("UpdateTinygrad"):
+      # Model downloads are explicitly user-initiated offroad work, so run them inline
+      # to avoid getting stuck behind a silent background thread failure.
+      process_model_download_request(params, params_memory)
 
   if params_memory.get_bool("FlashPanda"):
     thread_manager.run_with_lock(flash_panda, (params_memory))
@@ -162,7 +169,7 @@ def frogpilot_thread():
     started_previously = started
 
     if rate_keeper.frame % ASSET_CHECK_RATE == 0:
-      check_assets(now, theme_manager, thread_manager, params, params_memory, frogpilot_toggles)
+      check_assets(now, started, theme_manager, thread_manager, params, params_memory, frogpilot_toggles)
 
     if params_memory.get_bool("FrogPilotTogglesUpdated") or theme_manager.theme_updated:
       frogpilot_toggles = update_toggles(frogpilot_variables, started, theme_manager, thread_manager, time_validated, params, frogpilot_toggles)
