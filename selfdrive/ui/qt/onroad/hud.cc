@@ -1,15 +1,30 @@
 #include "selfdrive/ui/qt/onroad/hud.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "selfdrive/ui/qt/util.h"
 
 constexpr int SET_SPEED_NA = 255;
 constexpr int STEERING_ICON_SIZE = 156;
+constexpr int STEERING_ICON_WARNING_SIZE = 188;
+constexpr int LFA_ICON_SIZE = 104;
 constexpr int HUD_SIDE_MARGIN = 104;
 constexpr int HUD_BOTTOM_MARGIN = 96;
 constexpr float PREVIEW_SPEED_KPH = 192.0f;
 constexpr float PREVIEW_SET_SPEED_KPH = 65.0f;
+
+namespace {
+QColor blendColor(const QColor &a, const QColor &b, float t) {
+  t = std::clamp(t, 0.0f, 1.0f);
+  return QColor(
+    std::lround(a.red() + (b.red() - a.red()) * t),
+    std::lround(a.green() + (b.green() - a.green()) * t),
+    std::lround(a.blue() + (b.blue() - a.blue()) * t),
+    std::lround(a.alpha() + (b.alpha() - a.alpha()) * t)
+  );
+}
+}  // namespace
 
 HudRenderer::HudRenderer() {}
 
@@ -18,6 +33,23 @@ void HudRenderer::updateState(const UIState &s) {
   status = s.status;
 
   const SubMaster &sm = *(s.sm);
+  const auto &selfdrive_state = sm["selfdriveState"].getSelfdriveState();
+  const QString current_alert_type = QString::fromUtf8(selfdrive_state.getAlertType().cStr());
+  bool torque_preview_ok = false;
+  const float torque_preview = qEnvironmentVariable("STEERING_TORQUE_PREVIEW").trimmed().toFloat(&torque_preview_ok);
+  bool angle_preview_ok = false;
+  const float angle_preview = qEnvironmentVariable("STEERING_ANGLE_PREVIEW").trimmed().toFloat(&angle_preview_ok);
+  const bool accel_override_preview = qEnvironmentVariableIntValue("LFA_ACCEL_OVERRIDE_PREVIEW") == 1;
+  const bool steering_override_preview = qEnvironmentVariableIntValue("STEERING_OVERRIDE_PREVIEW") == 1;
+  selfdrive_enabled = selfdrive_state.getEnabled();
+  selfdrive_engageable = selfdrive_state.getEngageable() || selfdrive_enabled;
+  longitudinal_override_active = accel_override_preview;
+  lateral_override_active = steering_override_preview;
+  steer_limit_warning_active = current_alert_type.contains("steerSaturated", Qt::CaseInsensitive) ||
+                               qEnvironmentVariableIntValue("STEER_LIMIT_PREVIEW") == 1 ||
+                               (torque_preview_ok && torque_preview >= 0.95f);
+  steering_torque_pct = 0.0f;
+  steering_angle_deg = angle_preview_ok ? angle_preview : 0.0f;
   Params params;
   const bool force_preview = params.getBool("ForceOnroad") && sm.rcv_frame("carState") < s.scene.started_frame;
   if (force_preview) {
@@ -37,6 +69,45 @@ void HudRenderer::updateState(const UIState &s) {
 
   const auto &controls_state = sm["controlsState"].getControlsState();
   const auto &car_state = sm["carState"].getCarState();
+  const auto lateral_state = controls_state.getLateralControlState();
+  const auto lateral_which = lateral_state.which();
+  const bool is_overriding = selfdrive_state.getState() == cereal::SelfdriveState::OpenpilotState::OVERRIDING;
+  if (is_overriding) {
+    longitudinal_override_active = longitudinal_override_active || car_state.getGasPressed();
+    lateral_override_active = lateral_override_active || car_state.getSteeringPressed();
+  }
+  if (!angle_preview_ok) {
+    steering_angle_deg = -car_state.getSteeringAngleDeg();
+  }
+
+  switch (lateral_which) {
+    case cereal::ControlsState::LateralControlState::TORQUE_STATE: {
+      const auto torque_state = lateral_state.getTorqueState();
+      steering_torque_pct = std::clamp(std::abs(torque_state.getOutput()), 0.0f, 1.0f);
+      if (torque_state.getSaturated()) steering_torque_pct = 1.0f;
+      break;
+    }
+    case cereal::ControlsState::LateralControlState::PID_STATE: {
+      const auto pid_state = lateral_state.getPidState();
+      steering_torque_pct = std::clamp(std::abs(pid_state.getOutput()), 0.0f, 1.0f);
+      if (pid_state.getSaturated()) steering_torque_pct = 1.0f;
+      break;
+    }
+    case cereal::ControlsState::LateralControlState::ANGLE_STATE: {
+      const auto angle_state = lateral_state.getAngleState();
+      steering_torque_pct = std::clamp(std::abs(angle_state.getOutput()), 0.0f, 1.0f);
+      if (angle_state.getSaturated()) steering_torque_pct = 1.0f;
+      break;
+    }
+    case cereal::ControlsState::LateralControlState::DEBUG_STATE: {
+      const auto debug_state = lateral_state.getDebugState();
+      steering_torque_pct = std::clamp(std::abs(debug_state.getOutput()), 0.0f, 1.0f);
+      if (debug_state.getSaturated()) steering_torque_pct = 1.0f;
+      break;
+    }
+    default:
+      break;
+  }
 
   // Handle older routes where vCruiseCluster is not set
   set_speed = car_state.getVCruiseCluster() == 0.0 ? controls_state.getVCruiseDEPRECATED() : car_state.getVCruiseCluster();
@@ -62,6 +133,8 @@ void HudRenderer::draw(QPainter &p, const QRect &surface_rect) {
   if (frogpilot_nvg->standstillDuration == 0 && !frogpilot_toggles.value("hide_speed").toBool()) {
     drawCurrentSpeed(p, surface_rect);
   }
+  drawLfaIcon(p, surface_rect);
+  drawSteeringLimitWarningIcon(p, surface_rect);
   drawSteeringWheelIcon(p, surface_rect);
 
   p.restore();
@@ -142,10 +215,64 @@ void HudRenderer::drawCurrentSpeed(QPainter &p, const QRect &surface_rect) {
   drawText(p, unit_rect, is_metric ? tr("KM/H") : tr("MPH"), unit_color, Qt::AlignHCenter | Qt::AlignTop);
 }
 
+void HudRenderer::drawLfaIcon(QPainter &p, const QRect &surface_rect) {
+  static const QPixmap lfa_img = loadPixmap("../../files/icons/lfa.png", {LFA_ICON_SIZE, LFA_ICON_SIZE});
+  if (lfa_img.isNull()) return;
+
+  const int group_top = surface_rect.height() - 246;
+  const int center_x = surface_rect.center().x();
+  QRect speed_rect(center_x - 230, group_top - 18, 460, 162);
+  QRect icon_rect(speed_rect.right() - 84, speed_rect.top() + 2, LFA_ICON_SIZE, LFA_ICON_SIZE);
+  const bool active_preview = qEnvironmentVariableIntValue("LFA_ACTIVE_PREVIEW") == 1;
+
+  QColor tint = QColor(0x92, 0x9D, 0xA8, 0xE6);
+  QColor glow_base(0x49, 0xD2, 0x83);
+  if (longitudinal_override_active) {
+    tint = QColor(0x4F, 0x8D, 0xFF);
+    glow_base = QColor(0x4F, 0x8D, 0xFF);
+  } else if (selfdrive_enabled || active_preview) {
+    tint = QColor(0x49, 0xD2, 0x83);
+  } else if (selfdrive_engageable) {
+    tint = QColor(0xF4, 0xF7, 0xFB, 0xF4);
+  }
+
+  if (selfdrive_enabled || active_preview || longitudinal_override_active) {
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+
+    QRect glow_rect = icon_rect.adjusted(-26, -22, 26, 24);
+    QRadialGradient glow(glow_rect.center(), glow_rect.width() * 0.55);
+    glow.setColorAt(0.0, QColor(glow_base.red(), glow_base.green(), glow_base.blue(), 76));
+    glow.setColorAt(0.45, QColor(glow_base.red(), glow_base.green(), glow_base.blue(), 34));
+    glow.setColorAt(1.0, QColor(glow_base.red(), glow_base.green(), glow_base.blue(), 0));
+    p.setBrush(glow);
+    p.drawEllipse(glow_rect);
+    p.restore();
+  }
+
+  QPixmap tinted(lfa_img.size());
+  tinted.fill(Qt::transparent);
+
+  QPainter painter(&tinted);
+  painter.drawPixmap(0, 0, lfa_img);
+  painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+  painter.fillRect(tinted.rect(), tint);
+  painter.end();
+
+  p.save();
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+  p.drawPixmap(icon_rect, tinted);
+  p.restore();
+}
+
 void HudRenderer::drawSteeringWheelIcon(QPainter &p, const QRect &surface_rect) {
-  static const int wheel_button_size = STEERING_ICON_SIZE;
-  static const int wheel_icon_size = 150;
-  static const QPixmap wheel_img = loadPixmap("../../files/icons/steeringwheel.png", {wheel_icon_size, wheel_icon_size});
+  const int wheel_button_size = steer_limit_warning_active ? STEERING_ICON_WARNING_SIZE : STEERING_ICON_SIZE;
+  const int wheel_icon_size = steer_limit_warning_active ? 178 : 150;
+  const QPixmap wheel_img = loadPixmap("../../files/icons/steeringwheel.png", {wheel_icon_size, wheel_icon_size});
+  const QString torque_preview_str = qEnvironmentVariable("STEERING_TORQUE_PREVIEW").trimmed();
+  bool torque_preview_ok = false;
+  const float torque_preview = torque_preview_str.toFloat(&torque_preview_ok);
 
   const int right_margin = HUD_SIDE_MARGIN;
   const int bottom_margin = HUD_BOTTOM_MARGIN;
@@ -153,12 +280,23 @@ void HudRenderer::drawSteeringWheelIcon(QPainter &p, const QRect &surface_rect) 
                 surface_rect.height() - bottom_margin - wheel_button_size / 2);
 
   QColor bg = QColor(0x0A, 0x10, 0x16, 0xA8);
-  QColor tint = QColor(0xE9, 0xEF, 0xF5, 0xF0);
-  if (status == STATUS_ENGAGED || status == STATUS_ALWAYS_ON_LATERAL_ACTIVE || status == STATUS_TRAFFIC_MODE_ENABLED) {
+  QColor tint = QColor(0x9F, 0xA8, 0xB2, 0xE6);
+  const bool steering_active = selfdrive_enabled || longitudinal_override_active || lateral_override_active || (torque_preview_ok && torque_preview >= 0.0f);
+  const float torque_level = torque_preview_ok ? std::clamp(torque_preview, 0.0f, 1.0f) : steering_torque_pct;
+
+  if (lateral_override_active) {
+    bg = QColor(0x0A, 0x12, 0x1F, 0xB8);
+    tint = QColor(0x4F, 0x8D, 0xFF);
+  } else if (steering_active) {
+    const QColor active_white(0xF4, 0xF7, 0xFB, 0xF4);
+    const QColor warm_color(0xFF, 0xC7, 0x58, 0xF6);
+    const QColor hot_color(0xFF, 0x5D, 0x57, 0xF8);
     bg = QColor(0x0D, 0x16, 0x12, 0xB6);
-    tint = QColor(0x49, 0xD2, 0x83);
-  } else if (status == STATUS_OVERRIDE) {
-    tint = QColor(0xF1, 0xE7, 0xD0, 0xF0);
+    if (torque_level < 0.65f) {
+      tint = blendColor(active_white, warm_color, torque_level / 0.65f * 0.35f);
+    } else {
+      tint = blendColor(warm_color, hot_color, (torque_level - 0.65f) / 0.35f);
+    }
   }
 
   p.save();
@@ -177,8 +315,47 @@ void HudRenderer::drawSteeringWheelIcon(QPainter &p, const QRect &surface_rect) 
     painter.fillRect(tinted.rect(), tint);
     painter.end();
 
-    p.drawPixmap(center.x() - tinted.width() / 2, center.y() - tinted.height() / 2, tinted);
+    p.save();
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    p.translate(center);
+    p.rotate(steering_angle_deg);
+    p.drawPixmap(-tinted.width() / 2, -tinted.height() / 2, tinted);
+    p.restore();
   }
+  p.restore();
+}
+
+void HudRenderer::drawSteeringLimitWarningIcon(QPainter &p, const QRect &surface_rect) {
+  if (!steer_limit_warning_active) return;
+
+  static const int warning_icon_size = 76;
+  static const QPixmap warning_img = loadPixmap("../../files/icons/warning.png", {warning_icon_size, warning_icon_size});
+  if (warning_img.isNull()) return;
+
+  const int wheel_button_size = steer_limit_warning_active ? STEERING_ICON_WARNING_SIZE : STEERING_ICON_SIZE;
+  const int right_margin = HUD_SIDE_MARGIN;
+  const int bottom_margin = HUD_BOTTOM_MARGIN;
+  const QPoint wheel_center(surface_rect.width() - right_margin - wheel_button_size / 2,
+                            surface_rect.height() - bottom_margin - wheel_button_size / 2);
+  const QRect wheel_rect(wheel_center.x() - wheel_button_size / 2,
+                         wheel_center.y() - wheel_button_size / 2,
+                         wheel_button_size,
+                         wheel_button_size);
+  const QRect icon_rect(wheel_rect.left() - 84, wheel_rect.top() - 20, warning_icon_size, warning_icon_size);
+
+  p.save();
+  p.setRenderHint(QPainter::Antialiasing);
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+  QRect glow_rect = icon_rect.adjusted(-26, -22, 26, 22);
+  QRadialGradient glow(glow_rect.center(), glow_rect.width() * 0.55);
+  glow.setColorAt(0.0, QColor(0xFF, 0x68, 0x5B, 64));
+  glow.setColorAt(0.45, QColor(0xFF, 0x68, 0x5B, 26));
+  glow.setColorAt(1.0, QColor(0xFF, 0x68, 0x5B, 0));
+  p.setPen(Qt::NoPen);
+  p.setBrush(glow);
+  p.drawEllipse(glow_rect);
+  p.drawPixmap(icon_rect, warning_img);
   p.restore();
 }
 

@@ -36,6 +36,40 @@ class FrogPilotTracking:
 
     self.model_name = clean_model_name(frogpilot_toggles.model_name)
 
+  def flush(self, now, time_validated):
+    self._persist_stats(now, time_validated, force=True)
+
+  def _persist_stats(self, now, time_validated, force=False):
+    if self.tracked_time <= 0:
+      return
+
+    if not force and self.tracked_time < 60:
+      return
+
+    if time_validated:
+      current_month = now.month
+      if current_month != self.frogpilot_stats.get("Month"):
+        self.frogpilot_stats.update({
+          "CurrentMonthsMeters": 0,
+          "Month": current_month
+        })
+
+    self.frogpilot_stats["FrogPilotSeconds"] = self.frogpilot_stats.get("FrogPilotSeconds", 0) + self.tracked_time
+
+    current_model = self.model_name
+    total_model_times = self.frogpilot_stats.get("ModelTimes", {})
+    total_model_times[current_model] = total_model_times.get(current_model, 0) + self.tracked_time
+    self.frogpilot_stats["ModelTimes"] = total_model_times
+
+    self.frogpilot_stats["TrackedTime"] = self.frogpilot_stats.get("TrackedTime", 0) + self.tracked_time
+    self.tracked_time = 0
+
+    if not self.drive_added:
+      self.frogpilot_stats["FrogPilotDrives"] = self.frogpilot_stats.get("FrogPilotDrives", 0) + 1
+      self.drive_added = True
+
+    self.params.put_nonblocking("FrogPilotStats", dict(sorted(self.frogpilot_stats.items())))
+
   def update(self, now, time_validated, sm, frogpilot_toggles):
     v_cruise = min(sm["carState"].vCruiseCluster, V_CRUISE_MAX) * CV.KPH_TO_MS
     v_ego = max(sm["carState"].vEgo, 0)
@@ -148,28 +182,4 @@ class FrogPilotTracking:
     weather_times[suffix] = weather_times.get(suffix, 0) + DT_MDL
     self.frogpilot_stats["WeatherTimes"] = weather_times
 
-    if self.tracked_time >= 60 and sm["carState"].standstill and self.previously_enabled:
-      if time_validated:
-        current_month = now.month
-        if current_month != self.frogpilot_stats.get("Month"):
-          self.frogpilot_stats.update({
-            "CurrentMonthsMeters": 0,
-            "Month": current_month
-          })
-
-      self.frogpilot_stats["FrogPilotSeconds"] = self.frogpilot_stats.get("FrogPilotSeconds", 0) + self.tracked_time
-
-      current_model = self.model_name
-      total_model_times = self.frogpilot_stats.get("ModelTimes", {})
-      total_model_times[current_model] = total_model_times.get(current_model, 0) + self.tracked_time
-      self.frogpilot_stats["ModelTimes"] = total_model_times
-
-      self.frogpilot_stats["TrackedTime"] = self.frogpilot_stats.get("TrackedTime", 0) + self.tracked_time
-
-      self.tracked_time = 0
-
-      if not self.drive_added:
-        self.frogpilot_stats["FrogPilotDrives"] = self.frogpilot_stats.get("FrogPilotDrives", 0) + 1
-        self.drive_added = True
-
-      self.params.put_nonblocking("FrogPilotStats", dict(sorted(self.frogpilot_stats.items())))
+    self._persist_stats(now, time_validated)

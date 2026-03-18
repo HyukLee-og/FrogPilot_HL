@@ -2,6 +2,68 @@
 
 최종 갱신: 2026-03-18
 
+## 0. 2026-03-18 추가 후속 작업
+
+이 섹션은 `8ac7cfd3` 이후, 아직 별도 인수인계 반영이 안 되었던 후속 수정들을 정리한 것이다.
+
+### Onroad 후속 수정
+
+- blindspot 아이콘 렌더 좌표를 `mapTo()/window()` 기준이 아니라 실제 `QPainter viewport` 기준으로 재계산하도록 수정
+  - 목적: 기기에서 BSM 신호가 들어와도 아이콘이 안 보이는 문제 완화
+  - 관련 파일: `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- blindspot 아이콘 표시 로직 정리
+  - onroad 상태이면 openpilot enabled 여부와 무관하게 BSM 신호로 표시
+  - 같은 방향 깜빡이가 켜진 상태에서만 아이콘 점멸
+  - 좌우 glow 추가
+- 정차 타이머 UI 수정
+  - 위치를 하단 현재 속도 영역으로 이동
+  - 포맷을 `00h 00m` 에서 `0:00` (`시:분`) 으로 변경
+  - 숫자/문자 색상은 흰색 통일
+  - 관련 파일: `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- LFA 아이콘 상태 체계 재정리
+  - `files/icons/lfa.png` 사용
+  - 활성 불가: 회색
+  - 활성 가능: 흰색
+  - 활성 상태: 초록 + glow
+  - 악셀 오버라이드(longitudinal override): 파란색 + blue glow
+  - 관련 파일: `selfdrive/ui/qt/onroad/hud.cc`, `selfdrive/ui/qt/onroad/hud.h`
+- steering wheel 아이콘 후속 수정
+  - `files/icons/steeringwheel.png` 사용
+  - 실제 조향각(`carState.getSteeringAngleDeg()`)에 따라 회전하도록 로직 추가
+  - 활성 불가/활성 가능: 회색
+  - 활성 상태: 흰색
+  - 토크 한계에 가까워질수록 흰색 -> 주황/빨강
+  - lateral override(핸들 힘줘서 overriding) 시 파란색
+  - steer saturated / 조향 한계 preview에서 핸들 확대 + `files/icons/warning.png` 표시
+  - 관련 파일: `selfdrive/ui/qt/onroad/hud.cc`, `selfdrive/ui/qt/onroad/hud.h`, `selfdrive/ui/qt/onroad/alerts.cc`
+
+### Summary / Tracking 후속 수정
+
+- drive summary가 `0분 0km` 로 뜨는 문제 원인 분석
+  - 기존 `frogpilot_tracking.py` 는 사실상 정차 시점 조건에서만 통계를 저장해서, onroad 종료 시점 값이 offroad summary에 반영되지 않는 경우가 있었음
+- 수정 내용
+  - stat 저장 로직을 별도 persist/flush 흐름으로 분리
+  - onroad -> offroad 전환 시 남은 시간/거리도 flush 되도록 변경
+  - 관련 파일:
+    - `frogpilot/system/frogpilot_tracking.py`
+    - `frogpilot/frogpilot_process.py`
+
+### Sounds 후속 수정
+
+- 실제 콤마 기기에서는 `soundd.py` 가 `engage.wav/disengage.wav` 대신 `engage_tizi.wav/disengage_tizi.wav` 를 쓰는 점 재확인
+- 이전에는 일반 `engage.wav/disengage.wav` 만 커스텀된 상태라, git 업데이트 후 체감상 원래 소리로 돌아간 것처럼 느껴질 수 있었음
+- 해결:
+  - `selfdrive/assets/sounds/engage_tizi.wav`
+  - `selfdrive/assets/sounds/disengage_tizi.wav`
+  를 현재 커스텀 `engage.wav/disengage.wav` 와 동일한 내용으로 동기화
+
+### 빌드 / 패키징 후속 수정
+
+- 위 onroad 수정들을 반영한 최신 기기용 UI를 UTM에서 다시 빌드
+- 결과 바이너리를 로컬 repo `selfdrive/ui/ui` 로 동기화
+- 현재 빌드 후 로컬 `selfdrive/ui/ui` 해시:
+  - `ec3c533c24b760c4f41477e02541bdc0ceefedf2`
+
 ## 1. 문서 목적
 
 이 문서는 `/Users/ijonghyeog/Desktop/frogpilot-testing-v1` 저장소를 클론한 시점부터 2026-03-18 현재까지 진행한 모든 작업을 정리한 인수인계 문서다.
@@ -22,7 +84,7 @@
 - 콤마 기기 저장소: `/data/openpilot`
 - 최초 작업 시작 기준 브랜치: `testing-v1`
 - 최초 클론 직후 기준 커밋: `61c139ab` (`Compile FrogPilot`)
-- 현재 원격 브랜치 HEAD: `8ac7cfd3` (`Add blindspot onroad warning icons`)
+- 문서 작성 직전 원격 브랜치 HEAD: `8ac7cfd3` (`Add blindspot onroad warning icons`)
 
 최근 이 작업과 직접 관련된 커밋 흐름:
 

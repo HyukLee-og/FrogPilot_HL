@@ -240,7 +240,12 @@ void FrogPilotAnnotatedCameraWidget::updateState(const UIState &s, const FrogPil
     pendingLimitTimer.invalidate();
   }
 
-  if (frogpilot_scene.standstill && frogpilot_toggles.value("stopped_timer").toBool()) {
+  bool standstill_preview_ok = false;
+  const int standstill_preview = qEnvironmentVariableIntValue("STANDSTILL_PREVIEW", &standstill_preview_ok);
+  if (standstill_preview_ok && standstill_preview >= 0) {
+    standstillDuration = standstill_preview;
+    standstillTimer.invalidate();
+  } else if (frogpilot_scene.standstill && frogpilot_toggles.value("stopped_timer").toBool()) {
     if (!standstillTimer.isValid()) {
       standstillTimer.start();
     } else {
@@ -420,26 +425,33 @@ void FrogPilotAnnotatedCameraWidget::paintBlindspotIcons(QPainter &p) {
 
   const int left_margin = 44;
   const int right_margin = 40;
-  QWidget *anchor = window();
-  if (anchor == nullptr) {
-    anchor = this;
-  }
-
-  const QPoint top_left_in_anchor = (anchor == this) ? QPoint(0, 0) : mapTo(anchor, QPoint(0, 0));
-  const int anchor_height = anchor->height();
-  const int anchor_width = anchor->width();
-  const int y = (anchor_height / 2) - 180 - top_left_in_anchor.y();
+  const QRect viewport = p.viewport();
+  const int y = viewport.center().y() - 180;
 
   p.save();
+  p.setRenderHint(QPainter::Antialiasing);
   p.setRenderHint(QPainter::SmoothPixmapTransform);
 
+  auto draw_blindspot_glow = [&](const QRect &icon_rect, const QColor &glow_color) {
+    QRect glow_rect = icon_rect.adjusted(-34, -28, 34, 28);
+    QRadialGradient glow(glow_rect.center(), glow_rect.width() * 0.56);
+    glow.setColorAt(0.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 82));
+    glow.setColorAt(0.45, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 34));
+    glow.setColorAt(1.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 0));
+    p.setPen(Qt::NoPen);
+    p.setBrush(glow);
+    p.drawEllipse(glow_rect);
+  };
+
   if (show_left && (!blink_left || blink_visible) && !blindspotLeftImg.isNull()) {
-    const int x = left_margin - top_left_in_anchor.x();
+    const int x = viewport.left() + left_margin;
+    draw_blindspot_glow(QRect(x, y, blindspotLeftImg.width(), blindspotLeftImg.height()), QColor(0xFF, 0x67, 0x4A));
     p.drawPixmap(x, y, blindspotLeftImg);
   }
 
   if (show_right && (!blink_right || blink_visible) && !blindspotRightImg.isNull()) {
-    const int x = anchor_width - right_margin - blindspotRightImg.width() - top_left_in_anchor.x();
+    const int x = viewport.right() - right_margin - blindspotRightImg.width() + 1;
+    draw_blindspot_glow(QRect(x, y, blindspotRightImg.width(), blindspotRightImg.height()), QColor(0xFF, 0x67, 0x4A));
     p.drawPixmap(x, y, blindspotRightImg);
   }
 
@@ -1078,45 +1090,18 @@ void FrogPilotAnnotatedCameraWidget::paintSpeedLimitSources(QPainter &p) {
 void FrogPilotAnnotatedCameraWidget::paintStandstillTimer(QPainter &p) {
   p.save();
 
-  float transition = 0.0f;
+  const int hours = standstillDuration / 3600;
+  const int minutes = (standstillDuration % 3600) / 60;
+  const QString timer_text = QString("%1:%2").arg(hours).arg(minutes, 2, 10, QChar('0'));
 
-  QColor startColor, endColor;
-  if (standstillDuration < 60) {
-    startColor = endColor = bg_colors[STATUS_ENGAGED];
-  } else if (standstillDuration < 150) {
-    startColor = bg_colors[STATUS_ENGAGED];
-    endColor = bg_colors[STATUS_CEM_DISABLED];
-    transition = (standstillDuration - 60) / 90.0f;
-  } else if (standstillDuration < 300) {
-    startColor = bg_colors[STATUS_CEM_DISABLED];
-    endColor = bg_colors[STATUS_TRAFFIC_MODE_ENABLED];
-    transition = (standstillDuration - 150) / 150.0f;
-  } else {
-    startColor = endColor = bg_colors[STATUS_TRAFFIC_MODE_ENABLED];
-  }
+  const int group_top = rect().height() - 246;
+  const int center_x = rect().center().x();
 
-  QColor blendedColor(
-    startColor.red() + transition * (endColor.red() - startColor.red()),
-    startColor.green() + transition * (endColor.green() - startColor.green()),
-    startColor.blue() + transition * (endColor.blue() - startColor.blue())
-  );
+  p.setFont(InterFont(132, QFont::Bold));
+  p.setPen(whiteColor());
 
-  std::function<void(const QString &, int, const QFont &, const QColor &)> drawText = [&](const QString &text, int y, const QFont &font, const QColor &color) {
-    p.setFont(font);
-    p.setPen(color);
-
-    QRect standstillRect = p.fontMetrics().boundingRect(text);
-    standstillRect.moveCenter({rect().center().x(), y - standstillRect.height() / 2});
-    p.drawText(standstillRect.x(), standstillRect.bottom(), text);
-  };
-
-  int minutes = standstillDuration / 60;
-  QString minuteStr = minutes == 1 ? tr("1 minute") : tr("%1 minutes").arg(minutes);
-  drawText(minuteStr, 210, InterFont(176, QFont::Bold), blendedColor);
-
-  int seconds = standstillDuration % 60;
-  QString secondStr = seconds == 1 ? tr("1 second") : tr("%1 seconds").arg(seconds);
-  drawText(secondStr, 290, InterFont(66), whiteColor());
+  QRect timer_rect(center_x - 260, group_top - 6, 520, 150);
+  p.drawText(timer_rect, Qt::AlignHCenter | Qt::AlignBottom, timer_text);
 
   p.restore();
 }

@@ -1,3 +1,18 @@
+Patch Update (2026-03-18)
+=========================
+* Onroad follow-up
+  * Fixed blindspot icon rendering so the icons track the real painter viewport and continue to work even when openpilot is not enabled
+  * Added blindspot glow styling, same-side blinker blink behavior, and stable left/right positioning after sidebar transitions
+  * Moved the standstill timer into the lower speed area and reformatted it to `0:00`
+  * Replaced the LFA text badge with `files/icons/lfa.png`, including gray/white/green state colors and a blue acceleration-override state
+  * Added steering wheel rotation based on steering angle, blue lateral-override coloring, torque-to-red coloring, and the steering-limit warning icon treatment
+* Drive summary and tracking
+  * Fixed FrogPilot drive summary persistence so recent drive time and distance flush correctly when switching from onroad to offroad
+* Sounds
+  * Synced `engage_tizi.wav` and `disengage_tizi.wav` to the customized engage/disengage sounds so git updates keep the intended comma-device alert sounds
+* Packaging
+  * Rebuilt and checked in the current device UI binary for this patch set
+
 Version testing-v1 custom patch (2026-03-18)
 ============================================
 * Onroad UI refresh

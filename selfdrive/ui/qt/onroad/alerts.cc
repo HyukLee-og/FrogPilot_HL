@@ -5,26 +5,6 @@
 
 #include "selfdrive/ui/qt/util.h"
 
-namespace {
-void drawAlertChip(QPainter &p, const QString &label, const QColor &bg_color, int width) {
-  if (label.isEmpty()) return;
-
-  const int chip_height = 52;
-  const int chip_y = 330;
-  const QFont chip_font = InterFont(28, QFont::DemiBold);
-  const int chip_width = std::max(188, QFontMetrics(chip_font).horizontalAdvance(label) + 52);
-  QRect chip_rect((width - chip_width) / 2, chip_y, chip_width, chip_height);
-
-  p.setPen(Qt::NoPen);
-  p.setBrush(bg_color);
-  p.drawRoundedRect(chip_rect, 18, 18);
-
-  p.setFont(chip_font);
-  p.setPen(QColor(0x08, 0x0C, 0x12));
-  p.drawText(chip_rect, Qt::AlignCenter, label);
-}
-}  // namespace
-
 void OnroadAlerts::updateState(const UIState &s, const FrogPilotUIState &fs) {
   Alert a = getAlert(*(s.sm), *(fs.sm), s.scene.started_frame);
   const auto selfdrive_state = (*s.sm)["selfdriveState"].getSelfdriveState();
@@ -119,6 +99,11 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
   p.setRenderHint(QPainter::Antialiasing);
   p.setRenderHint(QPainter::TextAntialiasing);
 
+  if (alert.type.contains("steerSaturated", Qt::CaseInsensitive)) {
+    alertHeight = 0;
+    return;
+  }
+
   if (alert.size == cereal::SelfdriveState::AlertSize::NONE) {
     // FrogPilot variables
     alertHeight = 0;
@@ -176,9 +161,4 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
     }
   }
 
-  if (selfdriveEngageable) {
-    const QColor chip_bg = selfdriveEnabled ? QColor(0x36, 0xC2, 0x75, 0xF4)
-                                            : QColor(0xF2, 0xF5, 0xF8, 0xF2);
-    drawAlertChip(p, "LFA", chip_bg, width());
-  }
 }

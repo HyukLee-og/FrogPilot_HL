@@ -21,6 +21,8 @@ public:
 private:
   void drawSetSpeed(QPainter &p, const QRect &surface_rect);
   void drawCurrentSpeed(QPainter &p, const QRect &surface_rect);
+  void drawLfaIcon(QPainter &p, const QRect &surface_rect);
+  void drawSteeringLimitWarningIcon(QPainter &p, const QRect &surface_rect);
   void drawSteeringWheelIcon(QPainter &p, const QRect &surface_rect);
   void drawText(QPainter &p, const QRect &rect, const QString &text, const QColor &color = QColor(0xFF, 0xFF, 0xFF),
                 Qt::Alignment alignment = Qt::AlignLeft | Qt::AlignVCenter);
@@ -32,5 +34,12 @@ private:
   bool is_cruise_available = true;
   bool is_metric = false;
   bool v_ego_cluster_seen = false;
+  bool selfdrive_enabled = false;
+  bool selfdrive_engageable = false;
+  bool longitudinal_override_active = false;
+  bool lateral_override_active = false;
+  bool steer_limit_warning_active = false;
+  float steering_torque_pct = 0.0f;
+  float steering_angle_deg = 0.0f;
   int status = STATUS_DISENGAGED;
 };
