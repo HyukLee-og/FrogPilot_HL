@@ -89,6 +89,7 @@ public:
   std::unique_ptr<SubMaster> sm;
   UIStatus status;
   UIScene scene = {};
+  double started_false_since = -1.0;
   QString language;
   PrimeState *prime_state;
 

@@ -565,15 +565,15 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: Alert(
       "전방 추돌 주의",
       "전방 차량과 추돌 위험이 있습니다",
-      AlertStatus.critical, AlertSize.full,
+      AlertStatus.critical, AlertSize.mid,
       Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.prompt, 3.),
   },
 
   EventName.ldw: {
     ET.PERMANENT: Alert(
       "차선 이탈 감지됨",
-      "",
-      AlertStatus.userPrompt, AlertSize.small,
+      "운전에 주의하세요",
+      AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.ldw, AudibleAlert.prompt, 3.),
   },
 
@@ -647,7 +647,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.WARNING: Alert(
       "오토 홀드",
       "해제하려면 악셀을 밟거나 RES버튼을 누르세요",
-      AlertStatus.userPrompt, AlertSize.mid,
+      AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
   },
 
@@ -1152,9 +1152,9 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   FrogPilotEventName.leadDeparting: {
     ET.PERMANENT: Alert(
-      "선행 차량 출발 알림",
+      "",
       "선행 차량이 출발하였습니다",
-      FrogPilotAlertStatus.frogpilot, AlertSize.full,
+      FrogPilotAlertStatus.normal, AlertSize.full,
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
   },
 
@@ -1345,7 +1345,7 @@ if HARDWARE.get_device_type() == 'mici':
       ET.WARNING: Alert(
         "오토 홀드",
         "해제하려면 악셀을 밟거나 RES버튼을 누르세요",
-        AlertStatus.userPrompt, AlertSize.mid,
+        AlertStatus.normal, AlertSize.mid,
         Priority.LOW, VisualAlert.none, AudibleAlert.none, .2),
     },
     EventName.preLaneChangeLeft: {

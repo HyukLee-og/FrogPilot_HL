@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QWidget>
 
 #include "selfdrive/ui/ui.h"
@@ -46,6 +47,7 @@ protected:
   bool sidebarsOpen;
   bool selfdriveEnabled = false;
   bool selfdriveEngageable = false;
+  QElapsedTimer resumeRequiredTimer;
 
   const QMap<cereal::FrogPilotSelfdriveState::AlertStatus, QColor> frogpilot_alert_colors = {
     {cereal::FrogPilotSelfdriveState::AlertStatus::NORMAL, QColor(0x15, 0x15, 0x15, 0xf1)},

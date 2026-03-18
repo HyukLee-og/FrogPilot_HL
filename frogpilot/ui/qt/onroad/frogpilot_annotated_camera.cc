@@ -781,6 +781,7 @@ void FrogPilotAnnotatedCameraWidget::paintPathEdges(QPainter &p, int height) {
   p.save();
 
   QLinearGradient gradient(0, height, 0, 0);
+  const bool disengaged = uiState()->status == STATUS_DISENGAGED;
 
   std::function<void(const QColor &)> setPathEdgeColors = [&gradient](const QColor &baseColor) {
     gradient.setColorAt(0.0f, QColor(baseColor.red(), baseColor.green(), baseColor.blue(), 255.0f * 0.4f));
@@ -788,7 +789,10 @@ void FrogPilotAnnotatedCameraWidget::paintPathEdges(QPainter &p, int height) {
     gradient.setColorAt(1.0f, QColor(baseColor.red(), baseColor.green(), baseColor.blue(), 255.0f * 0.0f));
   };
 
-  if (frogpilot_scene.always_on_lateral_active) {
+  if (disengaged) {
+    const QColor gray_edge(0xe7, 0xea, 0xef);
+    setPathEdgeColors(gray_edge);
+  } else if (frogpilot_scene.always_on_lateral_active) {
     setPathEdgeColors(bg_colors[STATUS_ALWAYS_ON_LATERAL_ACTIVE]);
   } else if (frogpilot_scene.conditional_status == 1) {
     setPathEdgeColors(bg_colors[STATUS_CEM_DISABLED]);

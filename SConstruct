@@ -14,6 +14,7 @@ SCons.Warnings.warningAsException(True)
 
 TICI = os.path.isfile('/TICI')
 AGNOS = TICI
+RUNTIME_LINK_LIBS = "#third_party/runtime_link_libs"
 
 Decider('MD5-timestamp')
 
@@ -91,6 +92,7 @@ if arch == "larch64":
   ]
 
   libpath = [
+    RUNTIME_LINK_LIBS,
     "/usr/local/lib",
     "/system/vendor/lib64",
     f"#third_party/acados/{arch}/lib",
@@ -128,6 +130,7 @@ else:
   # Linux
   else:
     libpath = [
+      RUNTIME_LINK_LIBS,
       f"#third_party/acados/{arch}/lib",
       f"#third_party/libyuv/{arch}/lib",
       "/usr/lib/aarch64-linux-gnu",
@@ -135,6 +138,8 @@ else:
       "/usr/lib",
       "/usr/local/lib",
     ]
+
+libpath = [path for path in libpath if path != RUNTIME_LINK_LIBS or os.path.isdir(Dir(path).abspath)]
 
 if GetOption('asan'):
   ccflags = ["-fsanitize=address", "-fno-omit-frame-pointer"]

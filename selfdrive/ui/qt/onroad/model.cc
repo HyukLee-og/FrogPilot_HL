@@ -162,6 +162,10 @@ void ModelRenderer::update_model(const cereal::ModelDataV2::Reader &model, const
 }
 
 void ModelRenderer::drawLaneLines(QPainter &painter) {
+  if (uiState()->status == STATUS_DISENGAGED) {
+    return;
+  }
+
   // lanelines
   for (int i = 0; i < std::size(lane_line_vertices); ++i) {
     if (frogpilot_toggles.value("color_scheme").toString() != "stock") {

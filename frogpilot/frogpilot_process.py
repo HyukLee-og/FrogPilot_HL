@@ -18,6 +18,21 @@ from openpilot.frogpilot.system.frogpilot_stats import send_stats
 from openpilot.frogpilot.system.frogpilot_tracking import FrogPilotTracking
 
 ASSET_CHECK_RATE = (1 / DT_MDL)
+STARTED_FALL_DEBOUNCE_S = 5.0
+
+
+def debounce_started_state(raw_started: bool, effective_started: bool, started_false_since: float | None) -> tuple[bool, float | None]:
+  if raw_started:
+    return True, None
+
+  if not effective_started:
+    return False, None
+
+  now_monotonic = time.monotonic()
+  if started_false_since is None:
+    started_false_since = now_monotonic
+
+  return now_monotonic - started_false_since < STARTED_FALL_DEBOUNCE_S, started_false_since
 
 def check_assets(now, theme_manager, thread_manager, params, params_memory, frogpilot_toggles):
   for asset_type, asset_param in THEME_COMPONENT_PARAMS.items():
@@ -78,7 +93,7 @@ def update_toggles(frogpilot_variables, started, theme_manager, thread_manager, 
   theme_manager.theme_updated = False
   theme_manager.update_active_theme(time_validated, frogpilot_toggles, randomize_theme=randomize_theme)
 
-  if time_validated:
+  if time_validated and not started:
     thread_manager.run_with_lock(backup_toggles, (params))
 
   return frogpilot_toggles
@@ -106,6 +121,7 @@ def frogpilot_thread():
 
   run_update_checks = False
   started_previously = False
+  started_false_since = None
   time_validated = False
 
   error_log = ERROR_LOGS_PATH / "error.txt"
@@ -117,7 +133,8 @@ def frogpilot_thread():
 
     now = datetime.datetime.now(datetime.timezone.utc)
 
-    started = sm["deviceState"].started
+    raw_started = sm["deviceState"].started
+    started, started_false_since = debounce_started_state(raw_started, started_previously, started_false_since)
 
     if not started and started_previously:
       frogpilot_tracking.flush(now, time_validated)
@@ -152,7 +169,7 @@ def frogpilot_thread():
 
     run_update_checks |= params_memory.get_bool("ManualUpdateInitiated")
     run_update_checks |= now.second == 0 and (now.minute % 60 == 0 or (now.minute % 5 == 0 and frogpilot_variables.frogs_go_moo))
-    run_update_checks &= time_validated
+    run_update_checks &= time_validated and not started
 
     if run_update_checks:
       theme_manager.update_active_theme(time_validated, frogpilot_toggles)

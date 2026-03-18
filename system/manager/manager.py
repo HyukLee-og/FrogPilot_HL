@@ -24,6 +24,22 @@ from openpilot.system.hardware.hw import Paths
 from openpilot.frogpilot.common.frogpilot_functions import frogpilot_boot_functions, install_frogpilot, uninstall_frogpilot
 from openpilot.frogpilot.common.frogpilot_variables import get_frogpilot_toggles
 
+STARTED_FALL_DEBOUNCE_S = 5.0
+
+
+def debounce_started_state(raw_started: bool, effective_started: bool, started_false_since: float | None) -> tuple[bool, float | None]:
+  if raw_started:
+    return True, None
+
+  if not effective_started:
+    return False, None
+
+  now = time.monotonic()
+  if started_false_since is None:
+    started_false_since = now
+
+  return now - started_false_since < STARTED_FALL_DEBOUNCE_S, started_false_since
+
 
 def manager_init() -> None:
   save_bootlog()
@@ -141,6 +157,7 @@ def manager_thread() -> None:
   ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore, frogpilot_toggles=get_frogpilot_toggles())
 
   started_prev = False
+  started_false_since = None
   ignition_prev = False
 
   # FrogPilot variables
@@ -153,7 +170,8 @@ def manager_thread() -> None:
   while True:
     sm.update(1000)
 
-    started = sm['deviceState'].started
+    raw_started = sm['deviceState'].started
+    started, started_false_since = debounce_started_state(raw_started, started_prev, started_false_since)
 
     if started and not started_prev and not frogpilot_toggles.force_onroad:
       params.clear_all(ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION)

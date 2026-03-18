@@ -1,3 +1,13 @@
+Hotfix Update (2026-03-18)
+==========================
+* Runtime stability
+  * Debounced transient `deviceState.started` dropouts in the manager, FrogPilot process, and Qt UI so brief ignition/start glitches no longer kick the device into an offroad-style process restart while driving
+  * Deferred FrogPilot toggle backups, theme/update maintenance, and other non-critical maintenance work to offroad so heavy background work no longer competes with onroad runtime behavior
+  * Rebuilt the device UI binary from UTM against comma-compatible capnp/ffmpeg libraries and revalidated the runtime dependency set before deployment
+* Device deployment safety
+  * Kept the runtime library compatibility path in `launch_env.sh` so git-based updates do not strand the device at boot when the checked-in UI binary needs compatibility symlinks
+  * Synced the latest patched Python/runtime files together with the compiled UI binary so the comma device and repo stay aligned after updates
+
 Patch Update (2026-03-18)
 =========================
 * Onroad follow-up

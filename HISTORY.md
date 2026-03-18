@@ -2,6 +2,62 @@
 
 최종 갱신: 2026-03-18
 
+## 추가: 2026-03-18 주행 중 새로고침 / 부팅 안정성 수정
+
+이 섹션은 실제 콤마 기기 주행 중 `화면이 한 번 새로고침되는 느낌` 이 있었다는 피드백 이후, 그 원인 분석과 안정성 수정 내역을 정리한 것이다.
+
+### 증상
+
+- 주행 중 UI가 한 번 새로고침된 것처럼 보임
+- `ui`/`mapd` PID가 바뀐 흔적이 있었음
+- tmux 로그를 보면 단순 `ui` 크래시가 아니라, onroad 프로세스 여러 개가 한 번에 `SIGINT` 를 받고 다시 올라간 흐름이 있었음
+- 같은 날, git 업데이트 후 체크인된 `ui` 바이너리가 기기 라이브러리와 안 맞아 부팅이 막히는 문제도 재발
+
+### 원인 판단
+
+- `manager.py`/tmux 로그 기준으로, 화면 문제는 `ui` 단독 세그폴트보다는 `deviceState.started` 가 잠깐 false로 떨어졌을 때처럼 onroad 프로세스 세트가 한 번 offroad 전환 취급을 받은 쪽에 더 가까웠음
+- 같은 시점에 FrogPilot의 토글 백업, 테마/업데이트 점검 같은 유지보수 작업이 onroad 중에도 돌고 있었고, 실제 로그에도 `toggle backup`, `Theme validation complete`, `Checking for updates...` 등이 함께 보였음
+- 부팅 문제는 별개로, 체크인된 `selfdrive/ui/ui` 바이너리가 host/UTM 계열 라이브러리에 링크돼 있으면 기기에서 `capnp`/`ffmpeg` 불일치로 죽는 문제가 있었음
+
+### 수정 내용
+
+- `system/manager/manager.py`
+  - `deviceState.started` falling edge에 5초 debounce 추가
+  - 짧은 순간의 started glitch는 즉시 offroad 전환으로 보지 않도록 변경
+- `frogpilot/frogpilot_process.py`
+  - 동일하게 started falling edge debounce 추가
+  - toggle backup은 offroad에서만 수행하도록 변경
+  - 정기 `update_checks` / 테마 점검 / 자동 업데이트 점검은 offroad일 때만 돌도록 변경
+- `selfdrive/ui/ui.cc`, `selfdrive/ui/ui.h`
+  - Qt UI의 onroad/offroad 전환도 같은 기준으로 debounce 적용
+  - 그래서 started glitch가 와도 UI가 즉시 offroad처럼 튀지 않게 변경
+- `SConstruct`
+  - UTM device-ABI 빌드시 repo 내부 `third_party/runtime_link_libs` 를 우선 libpath에 넣어, comma와 맞는 `capnp 1.0.2 / ffmpeg58` 조합으로 링크되게 유지
+- `launch_env.sh`
+  - runtime compatibility library path 유지
+  - git 기반 업데이트 후에도 checked-in UI 바이너리가 필요한 호환 symlink를 보게끔 유지
+
+### 빌드 / 배포 결과
+
+- UTM에서 최신 수정본으로 device-ABI UI를 다시 빌드
+- 새 기기용 UI 해시:
+  - `deb9475b30b7c6a18fbc000f30b4b7e45db08f36`
+- `objdump -p selfdrive/ui/ui | grep NEEDED` 기준:
+  - `libcapnp-1.0.2.so`
+  - `libkj-1.0.2.so`
+  - `libavcodec.so.58`
+  - `libavformat.so.58`
+  - `libavutil.so.56`
+  - `libOmxCore.so`
+  - 등 comma 기기 런타임과 맞는 방향으로 재확인 완료
+- 기기 `10.43.111.127` 에 새 바이너리와 최신 소스 패치를 같이 동기화
+- `comma.service` 재시작 후 `./ui`, `./mapd` 정상 기동 확인
+
+### 비고
+
+- 로그상 `manager.py` 가 두 개 보이는 현상은 Python `multiprocessing` 래퍼 성격일 수 있어, 그것만으로는 원인 확정 근거로 쓰지 않았음
+- 실제 패치 방향은 `started glitch 완충 + onroad 중 불필요한 유지보수 지연 + device-compatible UI binary 재빌드` 쪽으로 잡음
+
 ## 0. 2026-03-18 추가 후속 작업
 
 이 섹션은 `8ac7cfd3` 이후, 아직 별도 인수인계 반영이 안 되었던 후속 수정들을 정리한 것이다.

@@ -7,6 +7,7 @@
 
 #include "common/transformations/orientation.hpp"
 #include "common/swaglog.h"
+#include "common/timing.h"
 #include "common/util.h"
 #include "common/watchdog.h"
 #include "system/hardware/hw.h"
@@ -18,6 +19,7 @@ constexpr float AUTO_BRIGHTNESS_MIN = 1.0f;
 constexpr float AUTO_BRIGHTNESS_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_GAMMA = 0.8f;
+constexpr double STARTED_FALL_DEBOUNCE_S = 5.0;
 
 static void update_sockets(UIState *s) {
   s->sm->update(0);
@@ -66,10 +68,22 @@ static void update_state(UIState *s, FrogPilotUIState *fs) {
   } else if (!sm.allAliveAndValid({"wideRoadCameraState"})) {
     scene.light_sensor = -1;
   }
-  scene.started = sm["deviceState"].getDeviceState().getStarted() && scene.ignition;
+  bool raw_started = sm["deviceState"].getDeviceState().getStarted() && scene.ignition;
+  if (raw_started) {
+    scene.started = true;
+    s->started_false_since = -1.0;
+  } else if (scene.started) {
+    double now = seconds_since_boot();
+    if (s->started_false_since < 0.0) {
+      s->started_false_since = now;
+    }
+    scene.started = (now - s->started_false_since) < STARTED_FALL_DEBOUNCE_S;
+  } else {
+    s->started_false_since = -1.0;
+    scene.started = false;
+  }
 
   auto params = Params();
-  scene.recording_audio = params.getBool("RecordAudio") && scene.started;
   const bool force_onroad_param = params.getBool("ForceOnroad");
   const bool force_offroad_param = params.getBool("ForceOffroad");
 
@@ -88,6 +102,7 @@ static void update_state(UIState *s, FrogPilotUIState *fs) {
   }
   scene.started |= force_onroad_param || frogpilot_scene.frogpilot_toggles.value("force_onroad").toBool();
   scene.started &= !(force_offroad_param || frogpilot_scene.frogpilot_toggles.value("force_offroad").toBool());
+  scene.recording_audio = params.getBool("RecordAudio") && scene.started;
 }
 
 void ui_update_params(UIState *s) {
