@@ -426,7 +426,7 @@ class SelfdriveD:
 
     # Check for FCW
     stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
-    model_fcw = self.sm['modelV2'].meta.hardBrakePredicted and not CS.brakePressed and not stock_long_is_braking
+    model_fcw = self.sm['modelV2'].meta.hardBrakePredicted and not stock_long_is_braking
     planner_fcw = self.sm['longitudinalPlan'].fcw and self.enabled
     lead_one = self.sm['radarState'].leadOne
     lead_fcw = False
