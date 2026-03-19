@@ -14,6 +14,17 @@ class ScheduleItem:
   metadata: tuple[Metadata, ...] = ()
   fixedvars: dict[str, int] = field(default_factory=dict)
 
+def legacy_buffer_view_offset(arg) -> int:
+  views = getattr(arg, "views", None)
+  if not views or len(views) != 1:
+    raise RuntimeError(f"unsupported legacy BUFFER_VIEW arg: {arg!r}")
+
+  view = views[-1]
+  offset = getattr(view, "offset", 0)
+  if not isinstance(offset, int):
+    raise RuntimeError(f"unsupported legacy BUFFER_VIEW offset: {offset!r}")
+  return offset
+
 # **** schedule linearizer
 
 def create_schedule_with_vars(sched_sink:UOp) -> tuple[list[ScheduleItem], dict[str, int]]:
@@ -66,7 +77,8 @@ def create_schedule_with_vars(sched_sink:UOp) -> tuple[list[ScheduleItem], dict[
     if ast.op is Ops.BUFFER_VIEW:
       base = k.src[1].buf_uop.buffer
       assert isinstance(base, Buffer), "base can't be MultiBuffer"
-      buffers[k.src[0]] = base.view(k.size, ast.dtype, ast.arg[1]*base.dtype.itemsize)
+      offset = ast.arg[1] if isinstance(ast.arg, tuple) else legacy_buffer_view_offset(ast.arg)
+      buffers[k.src[0]] = base.view(k.size, ast.dtype, offset*base.dtype.itemsize)
     ubufs = tuple(s.buf_uop.buffer for s in k.src if s.op is not Ops.BIND)
     if any(isinstance(x, MultiBuffer) for x in ubufs):
       assert all(isinstance(x, MultiBuffer) for x in ubufs), "kernel must all be multibuffer"

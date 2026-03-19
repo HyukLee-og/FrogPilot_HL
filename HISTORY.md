@@ -2,6 +2,94 @@
 
 최종 갱신: 2026-03-19
 
+## 추가: 2026-03-19 precompiled 다운로드 모델 실제 실행 복구 및 onroad 검증 완료
+
+이 섹션은 `steam-powered` / `sc-driving` 가 더 이상 built-in default fallback 상태가 아니라, 현재 브랜치 tinygrad/QCOM 런타임에서 실제로 실행되도록 끝까지 맞춘 내역과 실기 검증 결과를 정리한다.
+
+### 직전 문제 상태
+
+- 앞 단계 수정으로 precompiled artifact 자체는 다시 다운로드되고, `load_driving_model_bundle(...)` 도 통과하는 수준까지는 복구됐음
+- 하지만 실제 onroad 진입 시에는 여전히 `modeld` 가 죽거나 frame drop 이 발생했고, 특히 다음 호환성 문제가 남아 있었음:
+  - `AssertionError: args mismatch in JIT`
+  - legacy `BUFFER_VIEW` / `ShapeTracker` 직렬화 구조와 현재 tinygrad 런타임 구조 불일치
+- 즉 `pickle load 성공` 과 `실제 추론 성공` 사이에 남은 runtime-level incompatibility 가 있었음
+
+### 핵심 원인
+
+- 예전 FrogPilot precompiled 모델은 current tinygrad 보다 오래된 graph/JIT serialization 구조를 기준으로 저장돼 있었음
+- 현재 tinygrad 는:
+  - JIT input signature 에서 raw object equality 를 더 엄격하게 보았고
+  - `BUFFER_VIEW` / `VIEW` / `ShapeTracker` 처리 구조도 바뀌어 있었고
+  - 직렬화된 output graph 쪽 legacy view 표현도 그대로는 실행되지 않았음
+- 그 결과 artifact 는 `load` 는 되더라도 실제 QCOM 추론 단계에서 죽는 상태였음
+
+### 수정 내용
+
+- `tinygrad_repo/tinygrad/engine/jit.py`
+  - legacy shape descriptor 와 current runtime descriptor 를 raw object equality 대신 normalized shape signature 로 비교하도록 완화
+  - `args mismatch in JIT` 로 죽던 구간을 현재 shape 의미 기준으로 통과하게 수정
+
+- `tinygrad_repo/tinygrad/uop/ops.py`
+  - `Ops.BUFFER_VIEW` 의 shape 계산에서 tuple arg 뿐 아니라 legacy single-view `ShapeTracker` 형태도 인식하게 수정
+
+- `tinygrad_repo/tinygrad/uop/spec.py`
+  - tensor spec validation 에서 legacy `BUFFER_VIEW(ShapeTracker)` arg 도 허용하도록 확장
+
+- `tinygrad_repo/tinygrad/engine/schedule.py`
+  - schedule 생성 중 legacy `BUFFER_VIEW` arg 에서 offset 을 안전하게 추출하도록 수정
+
+- `selfdrive/modeld/modeld.py`
+  - unpickle 후 output tensor graph 에 남아 있는 legacy `BUFFER_VIEW` 노드를 현재 런타임이 이해하는 형태로 재작성하는 호환 레이어 추가
+  - 즉 `captured.ret` 쪽까지 포함해, 예전 artifact output graph 를 현재 tinygrad graph 로 정리한 뒤 실행하게 변경
+
+- `system/manager/manager.py`
+- `frogpilot/frogpilot_process.py`
+- `system/hardware/hardwared.py`
+  - `ForceOnroad` / `ForceOffroad` 가 live session 중에도 반영되도록 started 판단 경로 보강
+  - 이건 이번 모델 검증을 위해 실제 기기에서 onroad 프로세스를 강제로 띄워 확인할 수 있게 만든 보조 수정이기도 함
+
+### 실기 검증
+
+- 대상 기기: `192.168.0.11`
+
+- 먼저 device-side standalone inference 로 실제 QCOM 추론 검증:
+  - `steam-powered`
+    - vision / policy 둘 다 성공
+  - `sc-driving`
+    - vision / policy 둘 다 성공
+
+- warm-run benchmark 비교:
+  - `steam-powered`
+    - warm 기준 total latency 약 `25.6ms`
+  - `sc-driving`
+    - warm 기준 total latency 약 `22.9ms`
+  - 둘 다 built-in default 와 같은 성능 클래스에 들어옴
+
+- 이후 강제 onroad 검증:
+  - `steam-powered`
+    - `modeld`, `controlsd`, `selfdrived`, `plannerd`, `radard`, `camerad` 실제 기동 확인
+    - `Dropped`, `skipping model eval`, `Traceback`, `AssertionError`, `System Lagging` 미발생 확인
+  - `sc-driving`
+    - 동일하게 실제 onroad 프로세스 기동 확인
+    - `modeld` crash / JIT crash / dropped model eval 미발생 확인
+
+- 추가 확인:
+  - `annotated_camera.cc: slow frame rate: ~14fps` 로그는 `sc-driving` 에서만이 아니라 `steam-powered` 에서도 동일하게 재현됨
+  - 따라서 이 증상은 이번 다운로드 모델 runtime compatibility 문제와는 별개이며, 강제 onroad 검증 환경 또는 UI/camera 쪽과 더 관련 있는 것으로 판단
+
+### 최종 상태
+
+- `steam-powered`, `sc-driving` 모두 현재 브랜치 tinygrad/QCOM 런타임에서 실제 실행 가능
+- 즉 더 이상:
+  - built-in default fallback 에만 머무르거나
+  - precompiled artifact runtime crash 로 죽는 상태가 아님
+- 기기 `192.168.0.11` 는 최종적으로
+  - `DrivingModel=sc-driving`
+  - `ForceOnroad=0`
+  - `ForceOffroad=0`
+  - `IsOnroad=0`
+  의 안전한 offroad 상태로 정리해둠
+
 ## 추가: 2026-03-19 precompiled 다운로드 모델 호환성 복구 완료
 
 이 섹션은 `steam-powered` / `sc-driving` 같은 다운로드 모델이 실제로는 built-in default로 fallback 되거나, precompiled artifact는 호환성 에러로 버려지고 무거운 local-compile 산출물만 남던 문제를 끝까지 추적해서 고친 내역을 정리한다.

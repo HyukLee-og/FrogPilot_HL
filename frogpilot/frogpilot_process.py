@@ -140,7 +140,7 @@ def frogpilot_thread():
 
     now = datetime.datetime.now(datetime.timezone.utc)
 
-    raw_started = sm["deviceState"].started
+    raw_started = sm["deviceState"].started or params.get_bool("ForceOnroad")
     started, started_false_since = debounce_started_state(raw_started, started_previously, started_false_since)
 
     if not started and started_previously:

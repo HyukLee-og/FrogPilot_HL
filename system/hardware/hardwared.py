@@ -353,9 +353,13 @@ def hardware_thread(end_event, hw_queue) -> None:
     if started_ts is None:
       should_start = should_start and all(startup_conditions.values())
 
-    # FrogPilot variables
-    should_start |= frogpilot_toggles.force_onroad
-    should_start &= not frogpilot_toggles.force_offroad
+    # Force onroad/offroad can be toggled while manager is already running.
+    # Re-read the live params here so preview/debug transitions take effect
+    # without requiring a full manager restart.
+    force_onroad = params.get_bool("ForceOnroad") or frogpilot_toggles.force_onroad
+    force_offroad = params.get_bool("ForceOffroad") or frogpilot_toggles.force_offroad
+    should_start |= force_onroad
+    should_start &= not force_offroad
 
     if should_start != should_start_prev or (count == 0):
       params.put_bool("IsEngaged", False)

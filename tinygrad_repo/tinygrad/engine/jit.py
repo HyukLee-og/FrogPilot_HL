@@ -230,6 +230,32 @@ def _prepare_jit_inputs(args, kwargs):
   st_vars_dtype_device = [(x[0], tuple(sorted(x[1].keys(), key=lambda v: v.expr)), x[2], x[3]) for x in st_varval_dtype_device]
   return input_buffers, var_vals, names, st_vars_dtype_device
 
+def _jit_shape_signature(st_like: Any):
+  views = getattr(st_like, "views", None)
+  if views:
+    last_view = views[-1]
+    if (shape := getattr(last_view, "shape", None)) is not None:
+      return tuple(shape)
+
+  if (shape := getattr(st_like, "shape", None)) is not None:
+    try:
+      return tuple(shape)
+    except Exception:
+      pass
+
+  return repr(st_like)
+
+def _jit_var_signature(var: Any):
+  if hasattr(var, "expr"): return var.expr
+  if hasattr(var, "arg"): return var.arg
+  return repr(var)
+
+def _normalize_jit_signature(entries: list[tuple[Any, tuple[Variable, ...], DType, str]]):
+  return [
+    (_jit_shape_signature(st_like), tuple(_jit_var_signature(v) for v in vars_), str(dtype), device)
+    for st_like, vars_, dtype, device in entries
+  ]
+
 class TinyJit(Generic[ReturnType]):
   def __init__(self, fxn:Callable[..., ReturnType]|None, captured:CapturedJit|None=None, prune=False, optimize=False):
     assert fxn or captured, "need either a function or a CapturedJit"
@@ -333,8 +359,12 @@ class TinyJit(Generic[ReturnType]):
       # jit exec
       assert self.captured is not None
       assert self.captured.expected_names == names, f"args mismatch in JIT: {self.captured.expected_names=} != {names}"
-      assert self.captured.expected_st_vars_dtype_device == st_vars_dtype_device, \
-        f"args mismatch in JIT: {self.captured.expected_st_vars_dtype_device=} != {st_vars_dtype_device=}"
+      expected_signature = self.captured.expected_st_vars_dtype_device
+      if expected_signature != st_vars_dtype_device:
+        normalized_expected = _normalize_jit_signature(expected_signature)
+        normalized_actual = _normalize_jit_signature(st_vars_dtype_device)
+        assert normalized_expected == normalized_actual, \
+          f"args mismatch in JIT: {self.captured.expected_st_vars_dtype_device=} != {st_vars_dtype_device=}"
       ret = self.captured(input_buffers, var_vals)
 
     self.cnt += 1

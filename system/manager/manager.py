@@ -170,7 +170,7 @@ def manager_thread() -> None:
   while True:
     sm.update(1000)
 
-    raw_started = sm['deviceState'].started
+    raw_started = sm['deviceState'].started or params.get_bool("ForceOnroad")
     started, started_false_since = debounce_started_state(raw_started, started_prev, started_false_since)
 
     if started and not started_prev and not frogpilot_toggles.force_onroad:

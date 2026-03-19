@@ -105,6 +105,61 @@ def ensure_tinygrad_pickle_compat() -> None:
   ProgramSpec._frogpilot_safe_estimates = True
 
 
+def get_legacy_buffer_view_spec(arg):
+  views = getattr(arg, "views", None)
+  if not views or len(views) != 1:
+    return None
+
+  view = views[-1]
+  shape = getattr(view, "shape", None)
+  offset = getattr(view, "offset", None)
+  mask = getattr(view, "mask", None)
+  contiguous = getattr(view, "contiguous", None)
+  if not isinstance(shape, tuple) or not isinstance(offset, int) or mask is not None or contiguous is not True:
+    return None
+
+  return shape, offset
+
+
+def rewrite_legacy_buffer_view_uop(uop, memo):
+  if (cached := memo.get(id(uop))) is not None:
+    return cached
+
+  rewritten_src = tuple(rewrite_legacy_buffer_view_uop(src, memo) for src in uop.src)
+  rewritten = uop.replace(src=rewritten_src) if rewritten_src != uop.src else uop
+
+  if rewritten.op is Ops.BUFFER_VIEW and (legacy_spec := get_legacy_buffer_view_spec(rewritten.arg)) is not None:
+    shape, offset = legacy_spec
+    base = rewritten.src[0]
+
+    if offset != 0:
+      size = 1
+      for dim in shape:
+        if not isinstance(dim, int):
+          memo[id(uop)] = rewritten
+          return rewritten
+        size *= dim
+      base = base.replace(op=Ops.BUFFER_VIEW, dtype=rewritten.dtype, src=(base,), arg=(size, offset))
+
+    rewritten = base if base.shape == shape else base.reshape(shape)
+
+  memo[id(uop)] = rewritten
+  return rewritten
+
+
+def rewrite_legacy_buffer_view_output(obj):
+  if isinstance(obj, Tensor):
+    obj.uop = rewrite_legacy_buffer_view_uop(obj.uop, {})
+    return obj
+  if isinstance(obj, tuple):
+    return tuple(rewrite_legacy_buffer_view_output(item) for item in obj)
+  if isinstance(obj, list):
+    return [rewrite_legacy_buffer_view_output(item) for item in obj]
+  if isinstance(obj, dict):
+    return {key: rewrite_legacy_buffer_view_output(value) for key, value in obj.items()}
+  return obj
+
+
 def load_driving_model_bundle(vision_pkl_path: Path, policy_pkl_path: Path,
                               vision_metadata_path: Path, policy_metadata_path: Path):
   with open(vision_metadata_path, 'rb') as f:
@@ -123,9 +178,13 @@ def load_driving_model_bundle(vision_pkl_path: Path, policy_pkl_path: Path,
   ensure_tinygrad_pickle_compat()
   with open(vision_pkl_path, "rb") as f:
     vision_run = pickle.load(f)
+    if getattr(vision_run, "captured", None) is not None:
+      vision_run.captured.ret = rewrite_legacy_buffer_view_output(vision_run.captured.ret)
 
   with open(policy_pkl_path, "rb") as f:
     policy_run = pickle.load(f)
+    if getattr(policy_run, "captured", None) is not None:
+      policy_run.captured.ret = rewrite_legacy_buffer_view_output(policy_run.captured.ret)
 
   return (
     vision_input_shapes,

@@ -1,3 +1,23 @@
+Patch Update (2026-03-19, driving model runtime execution verified)
+==================================================================
+* Driving model runtime compatibility
+  * Extended tinygrad compatibility so older FrogPilot precompiled driving-model pickles now execute on the current runtime instead of only loading part-way and then crashing on-device
+  * Relaxed TinyJit input signature matching to accept legacy serialized shape descriptors when the effective tensor shapes still match
+  * Added legacy `BUFFER_VIEW` handling in tinygrad schedule/spec/uop shape logic so old precompiled graphs can execute without crashing on modern `BUFFER_VIEW` semantics
+  * Rewrote legacy serialized output `BUFFER_VIEW` nodes after unpickling so downloaded model outputs no longer fail at runtime on the current tinygrad graph format
+* Device-side validation
+  * Verified on comma `192.168.0.11` that both `steam-powered` and `sc-driving` precompiled models execute end-to-end on QCOM using direct vision/policy inference tests
+  * Benchmarked both downloaded models against the device runtime and confirmed warm-run timings stay in the same class as the built-in default model instead of the earlier heavy local-compile path
+  * Forced real onroad process startup on-device and verified:
+    * `steam-powered` no longer crashes `modeld`
+    * `sc-driving` also starts without `Traceback`, `AssertionError`, `skipping model eval`, or `Dropped` model logs
+  * Confirmed the remaining `annotated_camera.cc: slow frame rate` messages reproduce with `steam-powered` too, so that symptom is not specific to `sc-driving`
+* ForceOnroad runtime handling
+  * Updated manager, FrogPilot background process, and hardwared handling so `ForceOnroad` / `ForceOffroad` changes can take effect on a live device session without relying on stale startup-only toggle snapshots
+* Current device state
+  * Left comma `192.168.0.11` in a safe offroad state with `DrivingModel=sc-driving`
+  * `ForceOnroad=0`, `ForceOffroad=0`, `IsOnroad=0`
+
 Patch Update (2026-03-19, precompiled driving model runtime compatibility)
 =========================================================================
 * Driving model runtime compatibility

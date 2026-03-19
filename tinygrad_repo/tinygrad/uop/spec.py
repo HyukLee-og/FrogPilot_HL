@@ -5,6 +5,18 @@ from tinygrad.dtype import DType, ImageDType, dtypes, PtrDType, AddrSpace, Inval
 from tinygrad.helpers import DEBUG, Context, prod, SPEC, Metadata
 from tinygrad.uop.validate import validate_index
 
+def is_legacy_buffer_view_arg(arg: Any) -> bool:
+  views = getattr(arg, "views", None)
+  if not views or len(views) != 1:
+    return False
+
+  view = views[-1]
+  shape = getattr(view, "shape", None)
+  offset = getattr(view, "offset", None)
+  mask = getattr(view, "mask", None)
+  contiguous = getattr(view, "contiguous", None)
+  return isinstance(shape, tuple) and isinstance(offset, int) and mask is None and contiguous is True
+
 # four specs:
 #   shared_spec  -- usable anywhere
 #   tensor_spec  -- usable in tensor graph
@@ -65,7 +77,8 @@ _tensor_spec = PatternMatcher([
   (UPat(Ops.BUFFER, src=(UPat(Ops.UNIQUE), UPat(Ops.DEVICE)), allow_any_len=True, name="buf"),
    lambda buf: isinstance(buf.arg, int) and isinstance(buf.dtype, (DType, ImageDType))),
   (UPat(Ops.BUFFER_VIEW, src=(UPat(Ops.BUFFER),), name="buf_view"),
-   lambda buf_view: isinstance(buf_view.arg, tuple) and len(buf_view.arg) == 2 and all(isinstance(arg, (int, UOp)) for arg in buf_view.arg)),
+   lambda buf_view: (isinstance(buf_view.arg, tuple) and len(buf_view.arg) == 2 and all(isinstance(arg, (int, UOp)) for arg in buf_view.arg))
+                    or is_legacy_buffer_view_arg(buf_view.arg)),
   (UPat(Ops.BUFFER_VIEW, src=(UPat(Ops.MSTACK, src=UPat(Ops.BUFFER)),)), lambda: True),
 
   # KERNEL can attach to an AFTER to describe the compute required to realize a BUFFER
