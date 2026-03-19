@@ -2,6 +2,85 @@
 
 최종 갱신: 2026-03-19
 
+## 추가: 2026-03-19 precompiled 다운로드 모델 호환성 복구 완료
+
+이 섹션은 `steam-powered` / `sc-driving` 같은 다운로드 모델이 실제로는 built-in default로 fallback 되거나, precompiled artifact는 호환성 에러로 버려지고 무거운 local-compile 산출물만 남던 문제를 끝까지 추적해서 고친 내역을 정리한다.
+
+### 직전 상태
+
+- 앞 단계 수정으로 `frogpilot/tools/compile_models.py` 는 `Models/compiled` 를 우선 받게 되었음
+- 하지만 현재 브랜치 tinygrad/runtime 가 예전 FrogPilot precompiled pickle 구조를 그대로 읽지 못해서:
+  - `Ops.VIEW`
+  - `tinygrad.shape.shapetracker`
+  - `tinygrad.shape.view`
+  - `tinygrad.codegen.opt.kernel`
+  같은 레거시 참조 때문에 validation 이 실패했음
+- 그 결과 `compile_models.py` 는 precompiled artifact 를 지워버리고 `Models/uncompiled` ONNX를 다시 받아 기기에서 local compile 로 fallback 했음
+- 이 fallback 산출물은 다시:
+  - policy `24M`
+  - vision `94M`
+  수준으로 커졌고, 원래 목적이던 `sunnypilot에서 잘 돌던 경량 precompiled artifact` 를 쓰지 못하는 상태였음
+- 이후 추가 확인에서, precompiled artifact 를 현재 tinygrad로 직접 읽으면 다음 호환성 문제가 순차적으로 나왔음:
+  - `tinygrad.shape.shapetracker` 모듈 없음
+  - `Ops.RECIP` 없음
+  - `Ops.ENDRANGE` 없음
+  - `ProgramSpec.estimates` 재구성 중 `tuple index out of range`
+
+### 핵심 원인
+
+- 현재 저장소의 tinygrad 는 예전 FrogPilot precompiled driving-model pickle 이 직렬화되던 시점의 tinygrad 와 모듈/enum/ProgramSpec 구조가 일부 달라졌음
+- 그래서 `Models/compiled` 의 작은 artifact 는 성능적으로는 맞았지만, 런타임 호환성 부족 때문에 validation 단계에서 버려지고 있었음
+- 반면 local compile fallback 은 현재 런타임에서는 읽히지만, 산출물이 너무 커져서 frame drop 을 유발했음
+
+### 수정 내용
+
+- `tinygrad_repo/tinygrad/shape/__init__.py`
+- `tinygrad_repo/tinygrad/shape/view.py`
+- `tinygrad_repo/tinygrad/shape/shapetracker.py`
+- `tinygrad_repo/tinygrad/codegen/opt/kernel.py`
+  - 예전 FrogPilot precompiled pickle 이 기대하는 레거시 tinygrad 모듈 경로를 shim 으로 복원
+  - 현재 tinygrad 에 남아 있는 타입들은 재노출하고, 더 이상 존재하지 않는 shape 관련 객체는 pickle load 를 통과할 수 있도록 state-holder shim 클래스로 제공
+
+- `selfdrive/modeld/modeld.py`
+  - precompiled artifact 호환용 tinygrad compatibility layer 추가
+  - legacy enum alias 추가:
+    - `Ops.VIEW = Ops.BUFFER_VIEW`
+    - `Ops.RECIP = Ops.RECIPROCAL`
+    - `Ops.ENDRANGE = Ops.END`
+  - 구형 serialized `ProgramSpec/UOp` 구조에서도 `estimates` 계산이 죽지 않도록 `ProgramSpec.estimates` 를 안전 fallback 형태로 덮어씀
+  - 그 상태에서 다운로드된 모델 override 로딩을 다시 수행하도록 정리
+
+- `frogpilot/tools/compile_models.py`
+  - compiled artifact validation 도 동일한 tinygrad compatibility layer 를 사용하도록 수정
+  - 즉 `Models/compiled` tinygrad pkl 이 실제로 현재 런타임에서 load 가능한지 올바르게 판정하게 변경
+  - 호환되는 precompiled artifact 는 유지하고, 진짜로 깨진 경우에만 ONNX local compile fallback 하도록 정리
+
+### 실기 검증
+
+- 기기 `10.43.111.127` 에 최신 `compile_models.py`, `modeld.py`, tinygrad shim 파일 반영
+- 수동 검증:
+  - `/usr/local/venv/bin/python` + 현재 런타임 환경에서 원격 precompiled `steam-powered` policy/vision tinygrad pkl 을 각각 직접 `pickle.load(...)`
+  - 두 파일 모두 최종적으로 `OK <class 'tinygrad.engine.jit.TinyJit'>` 확인
+- 이후 기기 offroad 상태에서 `comma.service` 재시작 후 `steam-powered` 를 다시 다운로드
+- 최종 `/data/models/steam-powered_*` 파일 크기:
+  - policy `13M`
+  - vision `57M`
+- 마지막으로 기기에서:
+  - `DrivingModel=steam-powered`
+  - `resolve_driving_model_paths()`
+  - `load_driving_model_bundle(...)`
+  를 실제로 실행해, built-in default fallback 이 아니라 다운로드된 `/data/models/steam-powered_*` override 세트를 성공적으로 읽는 것까지 확인함
+
+### 현재 상태 / 의미
+
+- 이제 `steam-powered` 는 단순히 UI 상에서만 선택되는 게 아니라, 실제로 작은 precompiled artifact 를 현재 브랜치 런타임에서 직접 로드할 수 있는 상태
+- 즉 기존의
+  - `compiled artifact 호환 실패 -> local compile fallback -> 24M/94M -> frame drop`
+  경로가 막혔고,
+  - `compiled artifact 유지 -> 13M/57M -> downloaded override 직접 사용`
+  경로로 복구됨
+- 이 수정은 `steam-powered` 뿐 아니라 같은 계열의 다른 precompiled driving model 에도 동일하게 적용될 가능성이 높음
+
 ## 추가: 2026-03-19 드라이빙 모델 frame drop 원인 확정 및 precompiled 다운로드 경로 복구
 
 이 섹션은 `sc-driving`, `steam-powered` 같은 다운로드 모델을 선택하면 frame drop이 생기는데, sunnypilot에서는 같은 모델명이 정상 동작했던 이유를 실제 기기 기준으로 추적한 결과를 정리한다.

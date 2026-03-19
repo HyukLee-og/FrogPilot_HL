@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import pickle
 import requests
 import shutil
 import sys
@@ -166,6 +167,52 @@ def run_command(cmd: list[str], env: dict[str, str] | None = None) -> bool:
     return False
 
 
+def get_compile_env() -> dict[str, str]:
+  env = os.environ.copy()
+  env["PYTHONPATH"] = f"{env.get('PYTHONPATH', '')}:{TINYGRAD_REPO_PATH}"
+
+  # Match the same tinygrad compile flags used by the built-in model build so
+  # downloaded models don't produce a larger, slower generic artifact on device.
+  if os.path.exists("/TICI"):
+    env["DEV"] = "QCOM"
+    env["FLOAT16"] = "1"
+    env["NOLOCALS"] = "1"
+    env["IMAGE"] = "2"
+    env["JIT_BATCH_SIZE"] = "0"
+  else:
+    env.setdefault("DEV", "CPU")
+    env.setdefault("CPU_LLVM", "1")
+
+  return env
+
+
+def ensure_tinygrad_pickle_compat() -> None:
+  from tinygrad.uop import Ops
+  from tinygrad.renderer import ProgramSpec, Estimates
+
+  if not hasattr(Ops, "VIEW") and hasattr(Ops, "BUFFER_VIEW"):
+    Ops.VIEW = Ops.BUFFER_VIEW
+  if not hasattr(Ops, "RECIP") and hasattr(Ops, "RECIPROCAL"):
+    Ops.RECIP = Ops.RECIPROCAL
+  if not hasattr(Ops, "ENDRANGE") and hasattr(Ops, "END"):
+    Ops.ENDRANGE = Ops.END
+
+  if getattr(ProgramSpec, "_frogpilot_safe_estimates", False):
+    return
+
+  def safe_estimates(self) -> Estimates:
+    if self.uops is None:
+      return Estimates()
+
+    try:
+      return Estimates.from_uops(self.uops, ignore_indexing=True)
+    except Exception:
+      return Estimates()
+
+  ProgramSpec.estimates = property(safe_estimates)
+  ProgramSpec._frogpilot_safe_estimates = True
+
+
 def verify_download(session: requests.Session, file_path: Path, url: str) -> bool:
   if not file_path.exists() or file_path.stat().st_size == 0:
     return False
@@ -237,8 +284,7 @@ def compile_model(onnx_path: Path, params_memory: Params) -> bool:
   delete_path(metadata_temp_path)
   delete_path(metadata_path)
 
-  env = os.environ.copy()
-  env["PYTHONPATH"] = f"{env.get('PYTHONPATH', '')}:{TINYGRAD_REPO_PATH}"
+  env = get_compile_env()
 
   params_memory.put(DOWNLOAD_PROGRESS_PARAM, f"Compiling {onnx_path.stem}...")
   compiled = run_command([
@@ -280,6 +326,12 @@ def download_compiled_model(session: requests.Session, model_key: str, params_me
 
     downloaded_paths.append(downloaded_path)
 
+  if not validate_compiled_model(downloaded_paths):
+    print(f"Downloaded compiled artifacts for {model_key} are incompatible with current tinygrad runtime.")
+    for path in downloaded_paths:
+      delete_path(path)
+    return False
+
   return True
 
 
@@ -290,6 +342,20 @@ def download_uncompiled_model_component(session: requests.Session, model_key: st
   delete_path(destination)
 
   return download_file(session, destination, filename, params_memory, UNCOMPILED_MODEL_SOURCES)
+
+
+def validate_compiled_model(paths: list[Path]) -> bool:
+  try:
+    ensure_tinygrad_pickle_compat()
+
+    for path in paths:
+      if path.name.endswith("_tinygrad.pkl"):
+        with path.open("rb") as f:
+          pickle.load(f)
+    return True
+  except Exception as exception:
+    print(f"Compiled model validation failed: {exception}")
+    return False
 
 
 def prune_downloaded_models(params: Params, params_memory: Params) -> None:

@@ -1,3 +1,26 @@
+Patch Update (2026-03-19, precompiled driving model runtime compatibility)
+=========================================================================
+* Driving model runtime compatibility
+  * Added tinygrad compatibility shims so older FrogPilot precompiled driving-model artifacts can be unpickled on the current runtime again
+  * Restored the legacy module paths expected by the downloaded artifacts:
+    * `tinygrad.shape.shapetracker`
+    * `tinygrad.shape.view`
+    * `tinygrad.codegen.opt.kernel`
+  * Added runtime compatibility aliases for legacy tinygrad enum names used by the precompiled model pickles:
+    * `Ops.VIEW -> Ops.BUFFER_VIEW`
+    * `Ops.RECIP -> Ops.RECIPROCAL`
+    * `Ops.ENDRANGE -> Ops.END`
+  * Hardened `ProgramSpec.estimates` for older serialized uop/program layouts so precompiled model loading no longer aborts on estimate reconstruction
+* Driving model downloads
+  * Updated the FrogPilot compiled-artifact validator to use the same tinygrad compatibility layer before deciding whether a downloaded precompiled model is usable
+  * Re-downloaded `steam-powered` on comma after restarting `comma.service`
+  * Verified the final downloaded artifact sizes stay on the lightweight precompiled path instead of falling back to the heavy local-compile output:
+    * policy `~13M`
+    * vision `~57M`
+* Device validation
+  * Verified on comma with `/usr/local/venv/bin/python` that `selfdrive/modeld/modeld.py` now resolves `DrivingModel=steam-powered` to `/data/models/steam-powered_*`
+  * Verified `load_driving_model_bundle(...)` succeeds against the downloaded override set without falling back to the built-in default model
+
 Patch Update (2026-03-19, driving model download artifact fix)
 ==============================================================
 * Driving model downloads

@@ -30,6 +30,8 @@ from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.models.commonmodel_pyx import DrivingModelFrame, CLContext
 from openpilot.selfdrive.modeld.runners.tinygrad_helpers import qcom_tensor_from_opencl_address
+from tinygrad.uop import Ops
+from tinygrad.renderer import ProgramSpec, Estimates
 
 from openpilot.frogpilot.common.frogpilot_variables import get_frogpilot_toggles
 
@@ -74,6 +76,68 @@ def resolve_driving_model_paths() -> tuple[Path, Path, Path, Path]:
       return vision_pkl, policy_pkl, vision_metadata, policy_metadata
 
   return DEFAULT_VISION_PKL_PATH, DEFAULT_POLICY_PKL_PATH, DEFAULT_VISION_METADATA_PATH, DEFAULT_POLICY_METADATA_PATH
+
+
+def ensure_tinygrad_pickle_compat() -> None:
+  # Older compiled FrogPilot model artifacts may still reference legacy enum names.
+  if not hasattr(Ops, "VIEW") and hasattr(Ops, "BUFFER_VIEW"):
+    Ops.VIEW = Ops.BUFFER_VIEW
+  if not hasattr(Ops, "RECIP") and hasattr(Ops, "RECIPROCAL"):
+    Ops.RECIP = Ops.RECIPROCAL
+  if not hasattr(Ops, "ENDRANGE") and hasattr(Ops, "END"):
+    Ops.ENDRANGE = Ops.END
+
+  if getattr(ProgramSpec, "_frogpilot_safe_estimates", False):
+    return
+
+  def safe_estimates(self) -> Estimates:
+    if self.uops is None:
+      return Estimates()
+
+    try:
+      return Estimates.from_uops(self.uops, ignore_indexing=True)
+    except Exception:
+      # Precompiled FrogPilot artifacts can serialize older ProgramSpec/UOp
+      # layouts that no longer satisfy the current estimate walker.
+      return Estimates()
+
+  ProgramSpec.estimates = property(safe_estimates)
+  ProgramSpec._frogpilot_safe_estimates = True
+
+
+def load_driving_model_bundle(vision_pkl_path: Path, policy_pkl_path: Path,
+                              vision_metadata_path: Path, policy_metadata_path: Path):
+  with open(vision_metadata_path, 'rb') as f:
+    vision_metadata = pickle.load(f)
+    vision_input_shapes = vision_metadata['input_shapes']
+    vision_input_names = list(vision_input_shapes.keys())
+    vision_output_slices = vision_metadata['output_slices']
+    vision_output_size = vision_metadata['output_shapes']['outputs'][1]
+
+  with open(policy_metadata_path, 'rb') as f:
+    policy_metadata = pickle.load(f)
+    policy_input_shapes = policy_metadata['input_shapes']
+    policy_output_slices = policy_metadata['output_slices']
+    policy_output_size = policy_metadata['output_shapes']['outputs'][1]
+
+  ensure_tinygrad_pickle_compat()
+  with open(vision_pkl_path, "rb") as f:
+    vision_run = pickle.load(f)
+
+  with open(policy_pkl_path, "rb") as f:
+    policy_run = pickle.load(f)
+
+  return (
+    vision_input_shapes,
+    vision_input_names,
+    vision_output_slices,
+    vision_output_size,
+    policy_input_shapes,
+    policy_output_slices,
+    policy_output_size,
+    vision_run,
+    policy_run,
+  )
 
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
@@ -186,20 +250,40 @@ class ModelState:
     return None
 
   def __init__(self, context: CLContext):
-    vision_pkl_path, policy_pkl_path, vision_metadata_path, policy_metadata_path = resolve_driving_model_paths()
+    selected_paths = resolve_driving_model_paths()
+    using_downloaded_model = selected_paths != (
+      DEFAULT_VISION_PKL_PATH, DEFAULT_POLICY_PKL_PATH, DEFAULT_VISION_METADATA_PATH, DEFAULT_POLICY_METADATA_PATH
+    )
 
-    with open(vision_metadata_path, 'rb') as f:
-      vision_metadata = pickle.load(f)
-      self.vision_input_shapes =  vision_metadata['input_shapes']
-      self.vision_input_names = list(self.vision_input_shapes.keys())
-      self.vision_output_slices = vision_metadata['output_slices']
-      vision_output_size = vision_metadata['output_shapes']['outputs'][1]
+    try:
+      (self.vision_input_shapes,
+       self.vision_input_names,
+       self.vision_output_slices,
+       vision_output_size,
+       self.policy_input_shapes,
+       self.policy_output_slices,
+       policy_output_size,
+       self.vision_run,
+       self.policy_run) = load_driving_model_bundle(*selected_paths)
+    except Exception:
+      if not using_downloaded_model:
+        raise
 
-    with open(policy_metadata_path, 'rb') as f:
-      policy_metadata = pickle.load(f)
-      self.policy_input_shapes =  policy_metadata['input_shapes']
-      self.policy_output_slices = policy_metadata['output_slices']
-      policy_output_size = policy_metadata['output_shapes']['outputs'][1]
+      cloudlog.exception("failed to load downloaded driving model override, falling back to built-in default")
+      (self.vision_input_shapes,
+       self.vision_input_names,
+       self.vision_output_slices,
+       vision_output_size,
+       self.policy_input_shapes,
+       self.policy_output_slices,
+       policy_output_size,
+       self.vision_run,
+       self.policy_run) = load_driving_model_bundle(
+        DEFAULT_VISION_PKL_PATH,
+        DEFAULT_POLICY_PKL_PATH,
+        DEFAULT_VISION_METADATA_PATH,
+        DEFAULT_POLICY_METADATA_PATH,
+      )
 
     self.frames = {name: DrivingModelFrame(context, ModelConstants.MODEL_RUN_FREQ//ModelConstants.MODEL_CONTEXT_FREQ) for name in self.vision_input_names}
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
@@ -213,12 +297,6 @@ class ModelState:
     self.policy_inputs = {k: Tensor(v, device='NPY').realize() for k,v in self.numpy_inputs.items()}
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
-
-    with open(vision_pkl_path, "rb") as f:
-      self.vision_run = pickle.load(f)
-
-    with open(policy_pkl_path, "rb") as f:
-      self.policy_run = pickle.load(f)
 
     self.policy_desire_key = self.resolve_input_name("desire_pulse", self.policy_input_shapes)
     self.policy_features_key = self.resolve_input_name("features_buffer", self.policy_input_shapes)
