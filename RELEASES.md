@@ -1,3 +1,11 @@
+Patch Update (2026-03-19, FCW sensitivity follow-up)
+====================================================
+* FCW behavior
+  * Removed the remaining brake-pedal suppression from `model_fcw` so forward-collision alerts are no longer blocked just because the driver has already started braking
+  * Kept the existing TTC / closing-speed / distance-based FCW logic intact while making real-world FCW triggers more consistent with the recent tuning commits
+* Documentation
+  * Recorded this FCW follow-up adjustment in both `RELEASES.md` and `HISTORY.md`
+
 Patch Update (2026-03-19, offroad greeting cleanup)
 ===================================================
 * Offroad UI

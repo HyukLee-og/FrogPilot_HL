@@ -2,6 +2,52 @@
 
 최종 갱신: 2026-03-19
 
+## 추가: 2026-03-19 FCW 민감도 후속 조정
+
+이 섹션은 FCW가 실제 주행에서 기대보다 잘 보이지 않는다는 피드백 이후, 최근 FCW 관련 커밋 적용 상태를 다시 점검하고 마지막으로 남아 있던 브레이크 차단 조건을 제거한 내용을 정리한다.
+
+### 확인 배경
+
+- FCW 전용 UI 자체는 preview에서 정상적으로 표시되고 있었음
+- 실제 주행에서는 FCW가 잘 뜨지 않는다는 피드백이 있었음
+- 이전에 참고한 커밋들
+  - `0b43e7f77e09ac2a4981444a778a60b264f3f568`
+  - `6716db92917e9ddb0edd929aed76651c02a99c5f`
+  - `3d906b18e9646fee3df3363774174943d0bb1af2`
+  와 현재 브랜치 구현이 완전히 같은지 다시 대조할 필요가 있었음
+
+### 원인 판단
+
+- 현재 브랜치의 FCW 로직은 원본 커밋들과 동일 파일이 아니라 `selfdrive/selfdrived/selfdrived.py` 쪽으로 옮겨진 상태였음
+- 이 안에서 `lead_fcw` 는 이미
+  - `dRel < 30`
+  - `vRel < -3.0`
+  - `TTC < 2.5`
+  - 브레이크 입력과 무관
+  으로 동작하고 있었음
+- 하지만 `model_fcw` 는 여전히 `not CS.brakePressed` 조건이 남아 있어서, 운전자가 이미 브레이크를 밟기 시작한 경우 모델 기반 FCW가 차단될 수 있었음
+- 즉 최근 FCW 커밋 취지 중 `브레이크 중에도 FCW 허용` 이 lead/TTC 경로에는 반영돼 있었지만, model-based FCW 경로에는 일부만 반영된 상태였음
+
+### 수정 내용
+
+- `selfdrive/selfdrived/selfdrived.py`
+  - `model_fcw = self.sm['modelV2'].meta.hardBrakePredicted and not CS.brakePressed and not stock_long_is_braking`
+  - 위 조건에서 `not CS.brakePressed` 를 제거
+  - 최종적으로:
+    - `model_fcw = self.sm['modelV2'].meta.hardBrakePredicted and not stock_long_is_braking`
+  - 즉 드라이버가 브레이크를 밟기 시작했더라도, 모델이 강한 제동 예측을 내면 FCW가 계속 살아남도록 변경
+
+### 결과 해석
+
+- 현재 FCW는 보수적이었던 `vRel < -5.0` 기준보다 완화된 `vRel < -3.0` 및 `TTC < 2.5` 조건을 사용
+- 여기에 model-based FCW까지 브레이크 입력으로 막히지 않게 되어, 이전보다 더 일찍 혹은 더 자주 FCW가 뜰 가능성이 높아짐
+- 다만 `stock_long_is_braking` 차단은 그대로 유지되어, 순정 longitudinal 제동 상황과의 중복 경고는 계속 줄이는 방향을 유지함
+
+### 검증
+
+- `python3 -m py_compile selfdrive/selfdrived/selfdrived.py` 통과
+- 변경분은 별도 커밋으로 정리되어 `testing-v1` 에 푸시됨
+
 ## 추가: 2026-03-19 드라이빙 모델 다운로드 복구 / 밝기 재조정
 
 이 섹션은 FrogPilot의 `Driving Model` 관리 기능이 실제로 동작하지 않던 문제와, 야간 자동밝기가 여전히 과하게 어둡다는 피드백 이후의 수정 내역을 정리한다.
