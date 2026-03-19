@@ -1,3 +1,10 @@
+Patch Update (2026-03-19, offroad greeting cleanup)
+===================================================
+* Offroad UI
+  * Simplified the default offroad greeting title from `안녕하세요 종혁님` to `안녕하세요`
+* Packaging
+  * Rebuilt and checked in the updated device UI binary for the greeting text change
+
 Patch Update (2026-03-19, driving model download and brightness tuning)
 ======================================================================
 * Driving model management

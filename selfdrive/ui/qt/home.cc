@@ -201,7 +201,7 @@ OffroadHome::OffroadHome(QWidget* parent) : QFrame(parent) {
 
     home_layout->addSpacing(24);
 
-    greeting_title = new QLabel(tr("안녕하세요 종혁님"), this);
+    greeting_title = new QLabel(tr("안녕하세요"), this);
     greeting_title->setAlignment(Qt::AlignHCenter);
     greeting_title->setStyleSheet("font-size: 112px; font-weight: 800; color: #FFFFFF;");
     home_layout->addWidget(greeting_title, 0, Qt::AlignHCenter);
@@ -419,7 +419,7 @@ void OffroadHome::updateOffroadContent() {
     updateDriveSummaryStats();
   } else {
     show_recent_drive_summary = false;
-    greeting_title->setText(tr("안녕하세요 종혁님"));
+    greeting_title->setText(tr("안녕하세요"));
     greeting_description->setText(tr("오늘도 편안한 주행 되세요"));
     updateGreetingStats();
   }
