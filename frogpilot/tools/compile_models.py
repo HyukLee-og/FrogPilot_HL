@@ -20,12 +20,25 @@ METADATA_SCRIPT = Path(BASEDIR) / "selfdrive/modeld/get_model_metadata.py"
 TINYGRAD_REPO_PATH = Path(BASEDIR) / "tinygrad_repo"
 UNCOMPILED_DIR = Path(MODELS_PATH) / "uncompiled_downloads"
 MODEL_COMPONENTS = ("driving_policy", "driving_vision")
-MODEL_SOURCES = (
+COMPILED_MODEL_SUFFIXES = (
+  "driving_policy_metadata.pkl",
+  "driving_policy_tinygrad.pkl",
+  "driving_vision_metadata.pkl",
+  "driving_vision_tinygrad.pkl",
+)
+UNCOMPILED_MODEL_SUFFIXES = tuple(f"{component}.onnx" for component in MODEL_COMPONENTS)
+COMPILED_MODEL_SOURCES = (
+  "https://raw.githubusercontent.com/FrogAi/FrogPilot-Resources/Models/compiled",
+  "https://gitlab.com/FrogAi/FrogPilot-Resources/-/raw/Models/compiled",
+)
+UNCOMPILED_MODEL_SOURCES = (
   "https://raw.githubusercontent.com/FrogAi/FrogPilot-Resources/Models/uncompiled",
   "https://gitlab.com/FrogAi/FrogPilot-Resources/-/raw/Models/uncompiled",
 )
-GITHUB_MODEL_INDEX_URL = "https://api.github.com/repos/FrogAi/FrogPilot-Resources/contents/uncompiled?ref=Models"
-GITLAB_MODEL_INDEX_URL = "https://gitlab.com/api/v4/projects/FrogAi%2FFrogPilot-Resources/repository/tree?ref=Models&path=uncompiled&per_page=100"
+GITHUB_COMPILED_MODEL_INDEX_URL = "https://api.github.com/repos/FrogAi/FrogPilot-Resources/contents/compiled?ref=Models"
+GITLAB_COMPILED_MODEL_INDEX_URL = "https://gitlab.com/api/v4/projects/FrogAi%2FFrogPilot-Resources/repository/tree?ref=Models&path=compiled&per_page=100"
+GITHUB_UNCOMPILED_MODEL_INDEX_URL = "https://api.github.com/repos/FrogAi/FrogPilot-Resources/contents/uncompiled?ref=Models"
+GITLAB_UNCOMPILED_MODEL_INDEX_URL = "https://gitlab.com/api/v4/projects/FrogAi%2FFrogPilot-Resources/repository/tree?ref=Models&path=uncompiled&per_page=100"
 DOWNLOAD_CHUNK_SIZE = 16384
 
 
@@ -57,41 +70,71 @@ def get_available_model_keys(params: Params) -> list[str]:
 
 
 def has_all_model_files(model_key: str) -> bool:
-  return all((Path(MODELS_PATH) / f"{model_key}_{suffix}.pkl").exists() for suffix in (
-    "driving_policy_metadata",
-    "driving_policy_tinygrad",
-    "driving_vision_metadata",
-    "driving_vision_tinygrad",
-  ))
+  return all((Path(MODELS_PATH) / f"{model_key}_{suffix}").exists() for suffix in COMPILED_MODEL_SUFFIXES)
 
 
-def fetch_remote_model_keys(session: requests.Session) -> set[str]:
-  remote_model_keys = set()
+def get_model_key_from_filename(filename: str, suffixes: tuple[str, ...]) -> str | None:
+  for suffix in suffixes:
+    filename_suffix = f"_{suffix}"
+    if filename.endswith(filename_suffix):
+      return filename[:-len(filename_suffix)]
+  return None
+
+
+def fetch_remote_model_keys_from_indexes(session: requests.Session, github_url: str, gitlab_url: str,
+                                         suffixes: tuple[str, ...], label: str) -> set[str]:
+  remote_model_keys: set[str] = set()
 
   try:
-    response = session.get(GITHUB_MODEL_INDEX_URL, timeout=20)
+    response = session.get(github_url, timeout=20)
     response.raise_for_status()
     for entry in response.json():
       name = entry.get("name", "")
-      if name.endswith(".onnx"):
-        remote_model_keys.add(name.rsplit("_", 2)[0])
+      model_key = get_model_key_from_filename(name, suffixes)
+      if model_key:
+        remote_model_keys.add(model_key)
   except Exception as exception:
-    print(f"GitHub model index unavailable: {exception}")
+    print(f"GitHub {label} model index unavailable: {exception}")
 
   if remote_model_keys:
     return remote_model_keys
 
   try:
-    response = session.get(GITLAB_MODEL_INDEX_URL, timeout=20)
+    response = session.get(gitlab_url, timeout=20)
     response.raise_for_status()
     for entry in response.json():
       name = entry.get("name", "")
-      if name.endswith(".onnx"):
-        remote_model_keys.add(name.rsplit("_", 2)[0])
+      model_key = get_model_key_from_filename(name, suffixes)
+      if model_key:
+        remote_model_keys.add(model_key)
   except Exception as exception:
-    print(f"GitLab model index unavailable: {exception}")
+    print(f"GitLab {label} model index unavailable: {exception}")
 
   return remote_model_keys
+
+
+def fetch_compiled_model_keys(session: requests.Session) -> set[str]:
+  return fetch_remote_model_keys_from_indexes(
+    session,
+    GITHUB_COMPILED_MODEL_INDEX_URL,
+    GITLAB_COMPILED_MODEL_INDEX_URL,
+    COMPILED_MODEL_SUFFIXES,
+    "compiled",
+  )
+
+
+def fetch_remote_model_keys(session: requests.Session) -> set[str]:
+  compiled_model_keys = fetch_compiled_model_keys(session)
+  if compiled_model_keys:
+    return compiled_model_keys
+
+  return fetch_remote_model_keys_from_indexes(
+    session,
+    GITHUB_UNCOMPILED_MODEL_INDEX_URL,
+    GITLAB_UNCOMPILED_MODEL_INDEX_URL,
+    UNCOMPILED_MODEL_SUFFIXES,
+    "uncompiled",
+  )
 
 
 def get_requested_model_keys(params: Params, params_memory: Params, remote_model_keys: set[str] | None = None) -> list[str]:
@@ -136,11 +179,12 @@ def verify_download(session: requests.Session, file_path: Path, url: str) -> boo
     return True
 
 
-def download_file(session: requests.Session, destination: Path, filename: str, params_memory: Params) -> Path | None:
+def download_file(session: requests.Session, destination: Path, filename: str, params_memory: Params,
+                  sources: tuple[str, ...]) -> Path | None:
   temp_path = destination.with_suffix(destination.suffix + ".tmp")
   delete_path(temp_path)
 
-  for base_url in MODEL_SOURCES:
+  for base_url in sources:
     url = f"{base_url}/{filename}"
     try:
       with session.get(url, stream=True, timeout=20) as response:
@@ -220,13 +264,32 @@ def compile_model(onnx_path: Path, params_memory: Params) -> bool:
   return compiled_path.exists() and metadata_path.exists()
 
 
-def download_model_component(session: requests.Session, repo_url: str, model_key: str, component: str,
-                             params_memory: Params) -> Path | None:
+def download_compiled_model(session: requests.Session, model_key: str, params_memory: Params) -> bool:
+  downloaded_paths: list[Path] = []
+
+  for suffix in COMPILED_MODEL_SUFFIXES:
+    filename = f"{model_key}_{suffix}"
+    destination = Path(MODELS_PATH) / filename
+    delete_path(destination)
+
+    downloaded_path = download_file(session, destination, filename, params_memory, COMPILED_MODEL_SOURCES)
+    if downloaded_path is None:
+      for path in downloaded_paths:
+        delete_path(path)
+      return False
+
+    downloaded_paths.append(downloaded_path)
+
+  return True
+
+
+def download_uncompiled_model_component(session: requests.Session, model_key: str, component: str,
+                                        params_memory: Params) -> Path | None:
   filename = f"{model_key}_{component}.onnx"
   destination = UNCOMPILED_DIR / filename
   delete_path(destination)
 
-  return download_file(session, destination, filename, params_memory)
+  return download_file(session, destination, filename, params_memory, UNCOMPILED_MODEL_SOURCES)
 
 
 def prune_downloaded_models(params: Params, params_memory: Params) -> None:
@@ -286,8 +349,12 @@ def process_model_download_request(params: Params | None = None, params_memory: 
         clear_download_requests(params_memory)
         return False
 
+      if download_compiled_model(session, model_key, params_memory):
+        continue
+
+      print(f"Compiled artifacts unavailable for {model_key}, falling back to local compilation.")
       for component in MODEL_COMPONENTS:
-        onnx_path = download_model_component(session, "", model_key, component, params_memory)
+        onnx_path = download_uncompiled_model_component(session, model_key, component, params_memory)
         if onnx_path is None:
           clear_download_requests(params_memory)
           return False

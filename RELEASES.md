@@ -1,3 +1,13 @@
+Patch Update (2026-03-19, driving model download artifact fix)
+==============================================================
+* Driving model downloads
+  * Changed FrogPilot model downloads to prefer the precompiled `Models/compiled` tinygrad artifacts instead of always downloading ONNX from `Models/uncompiled` and recompiling locally on-device
+  * Kept the old ONNX local-compile path only as a fallback when compiled artifacts are unavailable remotely
+  * Re-downloaded `steam-powered` on comma using the new path and verified the resulting artifacts shrank from the previous heavy local-compile output to the expected precompiled size class (`~13M` policy / `~57M` vision)
+* Investigation notes
+  * Confirmed the earlier frame-drop regression was not just the `sc-driving` model name, but that the locally recompiled download path was producing much larger artifacts than the precompiled resource set used in sunnypilot-style flows
+  * Restarted `comma.service` offroad after replacing the downloaded `steam-powered` files so the next onroad session will load the corrected artifact set
+
 Patch Update (2026-03-19, FCW sensitivity follow-up)
 ====================================================
 * FCW behavior

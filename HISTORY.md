@@ -2,6 +2,67 @@
 
 최종 갱신: 2026-03-19
 
+## 추가: 2026-03-19 드라이빙 모델 frame drop 원인 확정 및 precompiled 다운로드 경로 복구
+
+이 섹션은 `sc-driving`, `steam-powered` 같은 다운로드 모델을 선택하면 frame drop이 생기는데, sunnypilot에서는 같은 모델명이 정상 동작했던 이유를 실제 기기 기준으로 추적한 결과를 정리한다.
+
+### 증상
+
+- 기본 내장 `WMI` 계열 모델은 비교적 정상인데, 다운로드 모델(`sc-driving`, `steam-powered`) 선택 시 `frame drop` / `skipping model eval. Dropped N frames` 가 반복적으로 발생했음
+- 사용자 체감상 sunnypilot에서는 `steam-powered` 가 정상 동작했던 기억이 있어, 단순히 모델 자체가 무겁다는 설명만으로는 부족했음
+
+### 조사 과정에서 확인한 사실
+
+- 현재 브랜치에서는 `selfdrive/modeld/modeld.py` 가 `DrivingModel` 설정을 읽고, `/data/models/<model>_*` 가 모두 있으면 built-in default 대신 실제 다운로드된 tinygrad vision/policy + metadata 를 사용함
+- 즉 예전처럼 `모델 선택 UI만 있고 실제론 기본 모델을 쓰는 상태`가 아니었고, 다운로드 모델이 진짜 런타임에 로드되고 있었음
+- 기기 `10.43.111.127` 에서 frame drop이 발생하던 시점의 `steam-powered` 파일 크기는:
+  - policy `24M`
+  - vision `94M`
+- 이전에 확인했던 `sc-driving` 도 비슷하게:
+  - policy `28M`
+  - vision `94M`
+- 반면 built-in default WMI 모델은 훨씬 작았음:
+  - policy `14M`
+  - vision `57M`
+
+### 핵심 원인
+
+- 기존 `frogpilot/tools/compile_models.py` 는 `Models/uncompiled` 의 ONNX를 내려받아, 기기/브랜치의 현재 tinygrad 툴체인으로 로컬 재컴파일하는 구조였음
+- 그런데 FrogPilot 리소스 저장소에는 별도로 `Models/compiled` 폴더가 있고, 여기에 이미 tinygrad pkl + metadata 가 제공되고 있었음
+- 실제 원격 `compiled` 산출물 크기를 확인해보니:
+  - `steam-powered` policy `12.9M`, vision `59M`
+  - `sc-driving` policy `14.5M`, vision `59M`
+  로 현재 브랜치가 on-device 재컴파일로 만든 결과물보다 훨씬 작았음
+- 즉 sunnypilot에서 문제 없었던 이유는, 모델 이름이 같더라도 실제로 쓰던 산출물이 `precompiled artifact` 였거나 그와 유사한 최적화 경로였을 가능성이 높고, 현재 브랜치는 ONNX 재컴파일 경로 때문에 훨씬 무거운 모델을 런타임에 올리고 있었던 것임
+
+### 수정 내용
+
+- `frogpilot/tools/compile_models.py`
+  - 다운로드 경로를 `Models/compiled` 우선으로 변경
+  - tinygrad `.pkl` + metadata 4종:
+    - `driving_policy_metadata.pkl`
+    - `driving_policy_tinygrad.pkl`
+    - `driving_vision_metadata.pkl`
+    - `driving_vision_tinygrad.pkl`
+    를 직접 다운로드하도록 변경
+  - 기존 `Models/uncompiled` ONNX 다운로드 후 local compile 흐름은, compiled artifact 가 없을 때만 fallback 되도록 유지
+  - 원격 모델 인덱스도 `compiled` 를 우선 조회하고, 없을 때만 `uncompiled` 로 fallback 하도록 정리
+
+### 실기 확인
+
+- 기기 `10.43.111.127` 에 새 스크립트를 직접 반영한 뒤, `/data/models/steam-powered_*` 를 삭제하고 `steam-powered` 를 다시 다운로드함
+- 재다운로드 후 기기 파일 크기:
+  - policy `13M`
+  - vision `57M`
+- 즉 기존의 무거운 local-compile 산출물(`24M/94M`)이 아니라, 기대하던 precompiled 산출물 계열로 정상 교체됨
+- 이후 기기를 offroad 상태에서 `comma.service` 재시작하여, 다음 onroad 에서 새로 받은 `steam-powered` 모델 세트를 물게 함
+
+### 현재 판단
+
+- 이번 수정으로 `다운로드 모델 경로가 불필요하게 무거운 산출물을 만드는 문제`는 해결한 상태
+- 다만 실제 frame drop이 완전히 사라졌는지는, offroad 재시작 이후 다음 onroad에서 다시 실차로 검증해야 함
+- 만약 여기서도 여전히 frame drop이 남으면, 그때는 `모델 아티팩트 크기` 다음 단계로 `modeld` 런타임 스케줄링/latency 쪽을 추가 추적해야 함
+
 ## 추가: 2026-03-19 FCW 민감도 후속 조정
 
 이 섹션은 FCW가 실제 주행에서 기대보다 잘 보이지 않는다는 피드백 이후, 최근 FCW 관련 커밋 적용 상태를 다시 점검하고 마지막으로 남아 있던 브레이크 차단 조건을 제거한 내용을 정리한다.
