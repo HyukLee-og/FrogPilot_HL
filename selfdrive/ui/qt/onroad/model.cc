@@ -1,5 +1,8 @@
 #include "selfdrive/ui/qt/onroad/model.h"
 
+#include <QPainterPath>
+#include <QPainterPathStroker>
+
 constexpr int CLIP_MARGIN = 500;
 
 namespace {
@@ -16,6 +19,89 @@ void grayToneGradient(QLinearGradient &gradient) {
   for (const auto &[position, color] : stops) {
     gradient.setColorAt(position, grayToneColor(color));
   }
+}
+
+QPainterPath buildPreviewCurve(const QRect &rect, float lateral_shift, float horizon_factor, float width_factor) {
+  const float w = rect.width();
+  const float h = rect.height();
+
+  QPointF start(rect.center().x() + (w * 0.04f) + lateral_shift, rect.bottom() - h * 0.06f);
+  QPointF control1(rect.center().x() + (w * 0.08f) + lateral_shift, rect.bottom() - h * 0.36f);
+  QPointF control2(rect.center().x() - (w * 0.02f) + lateral_shift, rect.top() + h * horizon_factor);
+  QPointF end(rect.center().x() - (w * width_factor) + lateral_shift, rect.top() + h * (horizon_factor - 0.07f));
+
+  QPainterPath curve(start);
+  curve.cubicTo(control1, control2, end);
+  return curve;
+}
+
+QPainterPath strokePath(const QPainterPath &path, float width) {
+  QPainterPathStroker stroker;
+  stroker.setWidth(width);
+  stroker.setCapStyle(Qt::RoundCap);
+  stroker.setJoinStyle(Qt::RoundJoin);
+  return stroker.createStroke(path);
+}
+
+void drawPreviewLane(QPainter &painter, const QRect &surface_rect, float lateral_shift, float opacity) {
+  QPainterPath lane = buildPreviewCurve(surface_rect, lateral_shift, 0.30f, 0.04f);
+  QColor lane_color(255, 255, 255, int(255 * opacity));
+  painter.fillPath(strokePath(lane, surface_rect.width() * 0.012f), lane_color);
+}
+
+void drawPreviewRoadEdge(QPainter &painter, const QRect &surface_rect, float lateral_shift, float opacity) {
+  QPainterPath edge = buildPreviewCurve(surface_rect, lateral_shift, 0.26f, 0.07f);
+  QColor edge_color(255, 90, 90, int(255 * opacity));
+  painter.fillPath(strokePath(edge, surface_rect.width() * 0.01f), edge_color);
+}
+
+void drawPreviewPath(QPainter &painter, const QRect &surface_rect, bool disengaged) {
+  const float w = surface_rect.width();
+  const float h = surface_rect.height();
+
+  QPainterPath center = buildPreviewCurve(surface_rect, 0.0f, 0.33f, 0.05f);
+
+  QPainterPathStroker fill_stroker;
+  fill_stroker.setWidth(w * 0.17f);
+  fill_stroker.setCapStyle(Qt::RoundCap);
+  fill_stroker.setJoinStyle(Qt::RoundJoin);
+  QPainterPath filled_path = fill_stroker.createStroke(center);
+
+  QLinearGradient gradient(0, surface_rect.bottom(), 0, surface_rect.top());
+  if (disengaged) {
+    gradient.setColorAt(0.00, QColor(170, 170, 170, 180));
+    gradient.setColorAt(0.45, QColor(135, 135, 135, 120));
+    gradient.setColorAt(1.00, QColor(120, 120, 120, 0));
+  } else {
+    gradient.setColorAt(0.00, QColor(63, 255, 120, 185));
+    gradient.setColorAt(0.45, QColor(120, 255, 140, 120));
+    gradient.setColorAt(1.00, QColor(120, 255, 140, 0));
+  }
+
+  painter.fillPath(filled_path, gradient);
+
+  QColor edge_color = disengaged ? QColor(185, 185, 185, 210) : QColor(80, 255, 155, 220);
+  painter.fillPath(strokePath(center, w * 0.19f), QColor(edge_color.red(), edge_color.green(), edge_color.blue(), 70));
+  painter.fillPath(strokePath(center, w * 0.035f), edge_color);
+
+  QPainterPath lead_curve;
+  lead_curve.addEllipse(QRectF(surface_rect.center().x() - w * 0.027f, surface_rect.top() + h * 0.26f, w * 0.054f, w * 0.054f));
+  QColor lead_color = disengaged ? QColor(205, 205, 205, 140) : QColor(255, 170, 90, 165);
+  painter.fillPath(lead_curve, lead_color);
+}
+
+void drawPreviewModel(QPainter &painter, const QRect &surface_rect, bool disengaged) {
+  painter.save();
+  painter.setRenderHint(QPainter::Antialiasing);
+
+  drawPreviewRoadEdge(painter, surface_rect, -surface_rect.width() * 0.23f, 0.45f);
+  drawPreviewRoadEdge(painter, surface_rect, surface_rect.width() * 0.23f, 0.45f);
+
+  drawPreviewLane(painter, surface_rect, -surface_rect.width() * 0.11f, 0.50f);
+  drawPreviewLane(painter, surface_rect, surface_rect.width() * 0.11f, 0.50f);
+
+  drawPreviewPath(painter, surface_rect, disengaged);
+  painter.restore();
 }
 
 }  // namespace
@@ -35,6 +121,9 @@ void ModelRenderer::draw(QPainter &painter, const QRect &surface_rect) {
   // Check if data is up-to-date
   if (sm.rcv_frame("liveCalibration") < s->scene.started_frame ||
       sm.rcv_frame("modelV2") < s->scene.started_frame) {
+    if (!qEnvironmentVariableIsEmpty("ONROAD_PATH_PREVIEW")) {
+      drawPreviewModel(painter, surface_rect, uiState()->status == STATUS_DISENGAGED);
+    }
     return;
   }
 

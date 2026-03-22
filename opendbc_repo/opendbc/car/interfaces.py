@@ -17,7 +17,7 @@ from opendbc.car.chrysler.values import CAR as CHRYSLER, ChryslerFrogPilotFlags
 from opendbc.car.common.basedir import BASEDIR
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.common.simple_kalman import KF1D, get_kalman_gain
-from opendbc.car.gm.values import CAR as GM
+from opendbc.car.gm.values import CAR as GM, GMSafetyFlags
 from opendbc.car.honda.values import CAR as HONDA, HONDA_BOSCH, HondaSafetyFlags
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import CAR as HYUNDAI, CANFD_CAR, HyundaiFlags, HyundaiFrogPilotSafetyFlags
@@ -194,6 +194,9 @@ class CarInterfaceBase(ABC):
 
       elif platform in GM:
         fp_ret.canUsePedal = True
+        stock_acc_fake_long_path = CP.pcmCruise and not CP.openpilotLongitudinalControl and CP.networkLocation == structs.CarParams.NetworkLocation.fwdCamera
+        if stock_acc_fake_long_path and (getattr(frogpilot_toggles, "fake_long", False) or getattr(frogpilot_toggles, "fake_long_test_ui", False)):
+          fp_ret.safetyConfigs[-1].safetyParam |= GMSafetyFlags.FLAG_GM_FAKE_LONG_BUTTONS.value
 
       elif platform in HONDA:
         fp_ret.canUsePedal = candidate not in HONDA_BOSCH

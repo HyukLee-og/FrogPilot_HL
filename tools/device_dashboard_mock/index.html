@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FrogPilot Device Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">LIVE PARAMS CONSOLE</p>
+          <h1>FrogPilot Device Console</h1>
+          <p class="subtitle">
+            상태 탭에서는 기기 상태, openpilot 상태, 차량 정보를 보고, 설정 탭에서는 전체 Params를
+            편집하고, 통계 탭에서는 FrogPilot 통계를 한글로 확인하고, 조회 탭에서는 기기 로그를 볼 수
+            있습니다.
+          </p>
+        </div>
+        <div class="topbar-actions">
+          <div id="connectionCard" class="connection-card">
+            <span id="connectionDot" class="dot live"></span>
+            <div>
+              <strong id="connectionLabel">Local Params Backend</strong>
+              <p id="deviceLabel">testing-v1 · prefix d</p>
+            </div>
+          </div>
+          <button id="refreshButton" class="action-button action-button-primary">전체 새로고침</button>
+        </div>
+      </header>
+
+      <nav class="tabbar" aria-label="Dashboard tabs">
+        <button class="tab-button active" data-tab="status">상태</button>
+        <button class="tab-button" data-tab="settings">설정</button>
+        <button class="tab-button" data-tab="stats">통계</button>
+        <button class="tab-button" data-tab="query">조회</button>
+      </nav>
+
+      <section class="tab-panel active" data-panel="status">
+        <section class="status-hero-grid">
+          <article class="hero-card hero-card-primary">
+            <div class="hero-label">Vehicle & Openpilot</div>
+            <div class="hero-main hero-main-status">
+              <div>
+                <h2 id="statusVehicleTitle">MOCK VEHICLE</h2>
+                <p id="statusVehicleSubtitle">차량과 openpilot의 핵심 상태를 요약해 보여줍니다.</p>
+              </div>
+              <div class="pill-row">
+                <span id="statusOpenpilotChip" class="pill success">ENABLED</span>
+                <span id="statusOnroadChip" class="pill neutral">OFFROAD</span>
+                <span id="statusEngagedChip" class="pill neutral">DISENGAGED</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="hero-card">
+            <div class="hero-label">Primary Status</div>
+            <div class="status-main-metrics">
+              <div class="status-main-card">
+                <span>차량 전압</span>
+                <strong id="statusVoltageValue">-</strong>
+              </div>
+              <div class="status-main-card">
+                <span>차량 속도</span>
+                <strong id="statusSpeedValue">-</strong>
+              </div>
+              <div class="status-main-card">
+                <span>ACC 속도</span>
+                <strong id="statusAccValue">-</strong>
+              </div>
+              <div class="status-main-card">
+                <span>오픈파일럿</span>
+                <strong id="statusOpenpilotValue">DISABLED</strong>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="status-grid">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">DEVICE</p>
+                <h3>콤마 기기 상태</h3>
+              </div>
+            </div>
+            <div id="deviceInfoGrid" class="info-card-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">OPENPILOT</p>
+                <h3>오픈파일럿 상태</h3>
+              </div>
+            </div>
+            <div id="openpilotInfoGrid" class="info-card-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">VEHICLE</p>
+                <h3>차량 정보</h3>
+              </div>
+            </div>
+            <div id="vehicleInfoGrid" class="info-card-grid"></div>
+          </section>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-panel="settings">
+        <section class="hero-grid">
+          <article class="hero-card hero-card-primary">
+            <div class="hero-label">Backend</div>
+            <div class="hero-main">
+              <div>
+                <h2 id="deviceStateTitle">실제 Params 연결됨</h2>
+                <p id="deviceStateDescription">로컬 params 디렉터리를 직접 읽고 쓰는 브랜치 전용 설정 콘솔입니다.</p>
+              </div>
+              <div class="pill-row">
+                <span id="startedChip" class="pill success">LIVE</span>
+                <span id="networkChip" class="pill neutral">BRANCH</span>
+                <span id="thermalChip" class="pill success">PARAMS READY</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="hero-card">
+            <div class="hero-label">Repository</div>
+            <div class="metric-stack">
+              <div class="metric-line">
+                <span>브랜치</span>
+                <strong id="opModeValue">testing-v1</strong>
+              </div>
+              <div class="metric-line">
+                <span>커밋</span>
+                <strong id="alertValue">-</strong>
+              </div>
+              <div class="metric-line">
+                <span>수정 파일</span>
+                <strong id="vehicleValue">0</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="hero-card">
+            <div class="hero-label">Params Summary</div>
+            <div class="speed-cluster">
+              <div>
+                <span>전체 키</span>
+                <strong><span id="speedValue">0</span><small>keys</small></strong>
+              </div>
+              <div>
+                <span>현재 값 있음</span>
+                <strong><span id="accValue">0</span><small>set</small></strong>
+              </div>
+              <div>
+                <span>FrogPilot 키</span>
+                <strong><span id="fakeValue">0</span><small>frog</small></strong>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel panel-params">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">SETTINGS</p>
+              <h3>전체 Params 편집</h3>
+            </div>
+            <span class="panel-caption" id="paramSummaryCaption">전체 키 0개</span>
+          </div>
+
+          <div class="param-toolbar">
+            <input id="paramSearch" type="search" placeholder="설정 검색" />
+            <select id="scopeFilter" class="param-select">
+              <option value="all">전체 범위</option>
+              <option value="frogpilot">FrogPilot만</option>
+              <option value="core">Core만</option>
+            </select>
+            <select id="typeFilter" class="param-select">
+              <option value="all">전체 타입</option>
+              <option value="BOOL">BOOL</option>
+              <option value="INT">INT</option>
+              <option value="FLOAT">FLOAT</option>
+              <option value="STRING">STRING</option>
+              <option value="JSON">JSON</option>
+              <option value="TIME">TIME</option>
+              <option value="BYTES">BYTES</option>
+            </select>
+            <label class="check-chip"><input id="presentOnly" type="checkbox" /> 현재 값만</label>
+            <label class="check-chip"><input id="changedOnly" type="checkbox" /> 변경값만</label>
+          </div>
+
+          <div id="paramList" class="param-list"></div>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-panel="stats">
+        <section class="stats-hero-grid">
+          <article class="hero-card hero-card-primary">
+            <div class="hero-label">FROGPILOT STATS</div>
+            <div class="hero-main hero-main-status">
+              <div>
+                <h2 id="statsTitle">FrogPilot 통계</h2>
+                <p id="statsSubtitle">기기에서 수집된 누적 통계를 보기 좋게 정리해 보여줍니다.</p>
+              </div>
+              <div class="pill-row">
+                <span id="statsAvailabilityChip" class="pill neutral">LOADING</span>
+                <span id="statsUpdatedChip" class="pill neutral">-</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="hero-card">
+            <div class="hero-label">Overview</div>
+            <div class="speed-cluster">
+              <div>
+                <span>총 주행 횟수</span>
+                <strong id="statsSummaryDrives">-</strong>
+              </div>
+              <div>
+                <span>총 주행 거리</span>
+                <strong id="statsSummaryDistance">-</strong>
+              </div>
+              <div>
+                <span>총 주행 시간</span>
+                <strong id="statsSummaryTime">-</strong>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">SUMMARY</p>
+              <h3>주요 통계</h3>
+            </div>
+            <span class="panel-caption" id="statsSummaryCaption">통계를 불러오는 중...</span>
+          </div>
+
+          <div id="statsSummaryGrid" class="stats-summary-grid"></div>
+        </section>
+
+        <section class="stats-section-grid" id="statsSectionGrid"></section>
+      </section>
+
+      <section class="tab-panel" data-panel="query">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">LOGS</p>
+              <h3>기기 로그 조회</h3>
+            </div>
+            <div class="pill-row">
+              <span id="logRefreshChip" class="pill success">AUTO 2S</span>
+            </div>
+          </div>
+
+          <div class="param-toolbar">
+            <div id="logSourceButtons" class="log-source-buttons"></div>
+            <button id="refreshLogsButton" class="action-button action-button-primary">로그 새로고침</button>
+          </div>
+
+          <div class="debug-grid">
+            <div class="debug-card">
+              <span>소스</span>
+              <strong id="logSourceValue">tmux</strong>
+            </div>
+            <div class="debug-card">
+              <span>상태</span>
+              <strong id="logStatusValue">READY</strong>
+            </div>
+            <div class="debug-card">
+              <span>마지막 갱신</span>
+              <strong id="logUpdatedValue">-</strong>
+            </div>
+            <div class="debug-card">
+              <span>라인 수</span>
+              <strong id="logLinesValue">0</strong>
+            </div>
+          </div>
+
+          <div class="timeline-card">
+            <div class="timeline-header">
+              <h4 id="logViewerTitle">TMUX</h4>
+              <span id="logViewerSubtitle" class="panel-caption">최근 로그</span>
+            </div>
+            <pre id="logViewer" class="log-viewer"></pre>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">QUICK ACTIONS</p>
+              <h3>필터와 보기 전환</h3>
+            </div>
+          </div>
+          <div class="sim-actions">
+            <button id="showAllButton" class="action-button">전체 보기</button>
+            <button id="showPresentButton" class="action-button">현재 값만</button>
+            <button id="showChangedButton" class="action-button">변경값만</button>
+            <button id="resetFiltersButton" class="action-button action-button-primary">필터 초기화</button>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

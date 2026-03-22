@@ -209,6 +209,46 @@ void FrogPilotAnnotatedCameraWidget::updateState(const UIState &s, const FrogPil
   float speedLimitOffset = frogpilotPlan.getSlcSpeedLimitOffset() * speedConversion;
   speedLimitOffsetStr = (speedLimitOffset != 0) ? QString::number(speedLimitOffset, 'f', 0).prepend((speedLimitOffset > 0) ? "+" : "-") : "–";
 
+  const bool fakeLongEnabled = frogpilot_toggles.value("fake_long").toBool();
+  const bool fakeLongTestUIEnabled = frogpilot_toggles.value("fake_long_test_ui").toBool();
+  showFakeLongTestUI = fakeLongEnabled || fakeLongTestUIEnabled;
+  showFakeLongButtons = fakeLongTestUIEnabled;
+  fakeLongCurrentSpeed = carState.getCruiseState().getSpeed() * speedConversion;
+  fakeLongApplySpeed = fakeLongCurrentSpeed;
+  fakeLongTargetSpeed = fakeLongApplySpeed;
+  fakeLongArmed = false;
+  fakeLongPaused = false;
+  fakeLongLastButton.clear();
+
+  const std::string fake_long_debug = params_memory.get("FakeLongDebug");
+  if (!fake_long_debug.empty()) {
+    const QJsonObject debug = QJsonDocument::fromJson(QByteArray::fromStdString(fake_long_debug)).object();
+    fakeLongArmed = debug.value("armed").toBool(false);
+    fakeLongPaused = debug.value("paused").toBool(false);
+    fakeLongCurrentSpeed = debug.value("userSet").toDouble(fakeLongCurrentSpeed / speedConversion) * speedConversion;
+    fakeLongApplySpeed = debug.value("commanded").toDouble(fakeLongApplySpeed / speedConversion) * speedConversion;
+    fakeLongTargetSpeed = debug.value("target").toDouble(fakeLongApplySpeed / speedConversion) * speedConversion;
+    fakeLongLastButton = debug.value("last").toString().toUpper();
+  }
+
+  bool fake_long_preview_ok = false;
+  const QString fake_long_preview = qEnvironmentVariable("FAKE_LONG_UI_PREVIEW").trimmed();
+  if (!fake_long_preview.isEmpty()) {
+    const QStringList parts = fake_long_preview.split(',');
+    if (parts.size() == 2) {
+      bool apply_ok = false;
+      bool current_ok = false;
+      const float preview_apply = parts[0].trimmed().toFloat(&apply_ok);
+      const float preview_current = parts[1].trimmed().toFloat(&current_ok);
+      fake_long_preview_ok = apply_ok && current_ok;
+      if (fake_long_preview_ok) {
+        showFakeLongTestUI = true;
+        fakeLongApplySpeed = preview_apply;
+        fakeLongCurrentSpeed = preview_current;
+      }
+    }
+  }
+
   static int lastFrameIndex;
   if (lastFrameIndex > animationFrameIndex && frogpilot_toggles.value("signal_icons").toString() == "frog") {
     frogHopCount++;
@@ -268,6 +308,29 @@ void FrogPilotAnnotatedCameraWidget::mousePressEvent(QMouseEvent *mouseEvent) {
     return;
   }
 
+  if (showFakeLongButtons) {
+    const QPoint pos = mouseEvent->pos();
+    QString button_key;
+    if (fakeLongMainRect.contains(pos)) {
+      button_key = "main";
+    } else if (fakeLongCancelRect.contains(pos)) {
+      button_key = "cancel";
+    } else if (fakeLongResRect.contains(pos)) {
+      button_key = "res";
+    } else if (fakeLongSetRect.contains(pos)) {
+      button_key = "set";
+    }
+
+    if (!button_key.isEmpty()) {
+      const QString payload = QString("%1:%2").arg(button_key).arg(QDateTime::currentMSecsSinceEpoch());
+      params_memory.put("FakeLongTestButton", payload.toStdString());
+      fakeLongActiveButton = button_key;
+      fakeLongButtonTimer.restart();
+      mouseEvent->accept();
+      return;
+    }
+  }
+
   mouseEvent->ignore();
 }
 
@@ -319,6 +382,10 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
 
   if (standstillDuration != 0) {
     paintStandstillTimer(p);
+  }
+
+  if (showFakeLongTestUI) {
+    paintFakeLongTestUI(p);
   }
 
   if (track_vertices.length() >= 1 && redLight && frogpilot_toggles.value("show_stopping_point").toBool()) {
@@ -1110,6 +1177,148 @@ void FrogPilotAnnotatedCameraWidget::paintStandstillTimer(QPainter &p) {
 
   QRect timer_rect(center_x - 260, group_top - 6, 520, 150);
   p.drawText(timer_rect, Qt::AlignHCenter | Qt::AlignBottom, timer_text);
+
+  p.restore();
+}
+
+void FrogPilotAnnotatedCameraWidget::paintFakeLongTestUI(QPainter &p) {
+  p.save();
+
+  const int card_width = 272;
+  const int card_height = 116;
+  const int card_gap = 28;
+  const int fake_long_y_offset = 96;
+  const int card_top = rect().height() - 398 - fake_long_y_offset;
+  const int center_x = rect().center().x();
+  const int total_width = (card_width * 2) + card_gap;
+  const QRect left_card(center_x - (total_width / 2), card_top, card_width, card_height);
+  const QRect right_card(left_card.right() + card_gap + 1, card_top, card_width, card_height);
+  const int button_width = 204;
+  const int button_height = 78;
+  const int button_gap = 18;
+  const int button_left = 56;
+  const int button_top = card_top - 256;
+
+  auto format_speed = [](float value) {
+    return value > 0.1f ? QString::number(std::nearbyint(value)) : "–";
+  };
+
+  auto is_active_button = [&](const QString &button_key) {
+    return fakeLongActiveButton == button_key && fakeLongButtonTimer.isValid() && fakeLongButtonTimer.elapsed() < 240;
+  };
+
+  auto draw_card = [&](const QRect &card, const QString &title, const QString &value,
+                       const QString &status, const QColor &accent, const QColor &fill, bool highlighted) {
+    p.setPen(QPen(highlighted ? accent : QColor(255, 255, 255, 42), highlighted ? 3 : 2));
+    p.setBrush(fill);
+    p.drawRoundedRect(card, 28, 28);
+
+    p.setPen(highlighted ? QColor(240, 247, 255, 224) : QColor(210, 217, 226, 212));
+    p.setFont(InterFont(25, QFont::DemiBold));
+    p.drawText(card.adjusted(0, 14, 0, 0), Qt::AlignHCenter | Qt::AlignTop, title);
+
+    p.setPen(highlighted ? QColor(255, 255, 255) : whiteColor());
+    p.setFont(InterFont(64, QFont::Bold));
+    p.drawText(card.adjusted(0, 18, 0, -6), Qt::AlignHCenter | Qt::AlignBottom, value);
+
+    QRect status_rect(card.left() + 24, card.bottom() - 42, card.width() - 48, 28);
+    p.setPen(highlighted ? accent : QColor(220, 220, 220, 180));
+    p.setFont(InterFont(22, QFont::DemiBold));
+    p.drawText(status_rect, Qt::AlignHCenter | Qt::AlignVCenter, status);
+  };
+
+  auto draw_status_chip = [&](const QRect &chip_rect, const QString &label, const QString &value, const QColor &accent) {
+    p.setPen(QPen(QColor(255, 255, 255, 28), 2));
+    p.setBrush(QColor(0, 0, 0, 148));
+    p.drawRoundedRect(chip_rect, 22, 22);
+
+    p.setPen(QColor(210, 217, 226, 180));
+    p.setFont(InterFont(21, QFont::DemiBold));
+    p.drawText(chip_rect.adjusted(0, 10, 0, 0), Qt::AlignHCenter | Qt::AlignTop, label);
+
+    p.setPen(accent);
+    p.setFont(InterFont(29, QFont::Bold));
+    p.drawText(chip_rect.adjusted(0, 0, 0, -10), Qt::AlignHCenter | Qt::AlignBottom, value);
+  };
+
+  auto draw_button = [&](QRect &button_rect, const QString &label, const QString &button_key) {
+    const bool active = is_active_button(button_key);
+    p.setPen(QPen(active ? QColor(110, 220, 255, 220) : QColor(255, 255, 255, 42), active ? 3 : 2));
+    p.setBrush(active ? QColor(20, 88, 120, 196) : QColor(0, 0, 0, 138));
+    p.drawRoundedRect(button_rect, 26, 26);
+
+    p.setPen(active ? QColor(220, 246, 255) : QColor(255, 255, 255, 224));
+    p.setFont(InterFont(33, QFont::Bold));
+    p.drawText(button_rect, Qt::AlignCenter, label);
+  };
+
+  if (showFakeLongButtons) {
+    fakeLongMainRect = QRect(button_left, button_top, button_width, button_height);
+    fakeLongCancelRect = QRect(button_left, fakeLongMainRect.bottom() + button_gap + 1, button_width, button_height);
+    fakeLongResRect = QRect(button_left, fakeLongCancelRect.bottom() + button_gap + 1, button_width, button_height);
+    fakeLongSetRect = QRect(button_left, fakeLongResRect.bottom() + button_gap + 1, button_width, button_height);
+
+    draw_button(fakeLongMainRect, tr("MAIN"), "main");
+    draw_button(fakeLongCancelRect, tr("CANCEL"), "cancel");
+    draw_button(fakeLongResRect, tr("RES"), "res");
+    draw_button(fakeLongSetRect, tr("SET"), "set");
+  } else {
+    fakeLongMainRect = QRect();
+    fakeLongCancelRect = QRect();
+    fakeLongResRect = QRect();
+    fakeLongSetRect = QRect();
+  }
+
+  const float fake_sync_delta = fakeLongApplySpeed - fakeLongCurrentSpeed;
+  const bool fake_syncing_up = fakeLongArmed && !fakeLongPaused && fake_sync_delta > 0.5f;
+  const bool fake_syncing_down = fakeLongArmed && !fakeLongPaused && fake_sync_delta < -0.5f;
+  const bool fake_ready = fakeLongArmed && !fakeLongPaused && !fake_syncing_up && !fake_syncing_down;
+
+  QString fake_status = tr("OFF");
+  QColor fake_accent(220, 220, 220, 220);
+  QColor fake_fill(0, 0, 0, 144);
+  bool fake_highlight = false;
+
+  if (fakeLongPaused) {
+    fake_status = tr("PAUSED");
+    fake_accent = QColor(255, 194, 92, 235);
+    fake_fill = QColor(74, 48, 10, 184);
+    fake_highlight = true;
+  } else if (fake_syncing_up) {
+    fake_status = tr("UP");
+    fake_accent = QColor(110, 235, 160, 235);
+    fake_fill = QColor(18, 78, 44, 184);
+    fake_highlight = true;
+  } else if (fake_syncing_down) {
+    fake_status = tr("DOWN");
+    fake_accent = QColor(108, 196, 255, 235);
+    fake_fill = QColor(14, 52, 88, 184);
+    fake_highlight = true;
+  } else if (fake_ready) {
+    fake_status = tr("READY");
+    fake_accent = QColor(255, 255, 255, 220);
+    fake_fill = QColor(0, 0, 0, 144);
+  }
+
+  draw_card(left_card, tr("FAKE"), format_speed(fakeLongApplySpeed), fake_status, fake_accent, fake_fill, fake_highlight);
+  draw_card(right_card, tr("ACC"), format_speed(fakeLongCurrentSpeed), tr("LIVE"), QColor(255, 255, 255, 200), QColor(0, 0, 0, 144), false);
+
+  const int chip_width = 182;
+  const int chip_height = 84;
+  const int chip_gap = 18;
+  const int chip_top = left_card.bottom() + 18;
+  const int chip_total = (chip_width * 4) + (chip_gap * 3);
+  const int chip_left = center_x - (chip_total / 2);
+
+  const QRect armed_chip(chip_left, chip_top, chip_width, chip_height);
+  const QRect paused_chip(armed_chip.right() + chip_gap + 1, chip_top, chip_width, chip_height);
+  const QRect target_chip(paused_chip.right() + chip_gap + 1, chip_top, chip_width, chip_height);
+  const QRect last_chip(target_chip.right() + chip_gap + 1, chip_top, chip_width, chip_height);
+
+  draw_status_chip(armed_chip, tr("ARMED"), fakeLongArmed ? tr("ON") : tr("OFF"), fakeLongArmed ? QColor(134, 233, 164) : QColor(220, 220, 220));
+  draw_status_chip(paused_chip, tr("PAUSED"), fakeLongPaused ? tr("YES") : tr("NO"), fakeLongPaused ? QColor(255, 198, 106) : QColor(220, 220, 220));
+  draw_status_chip(target_chip, tr("TARGET"), format_speed(fakeLongTargetSpeed), QColor(255, 255, 255));
+  draw_status_chip(last_chip, tr("LAST"), fakeLongLastButton.isEmpty() ? "–" : fakeLongLastButton, QColor(136, 214, 255));
 
   p.restore();
 }

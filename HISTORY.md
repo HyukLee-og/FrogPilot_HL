@@ -1,6 +1,199 @@
 # frogpilot-testing-v1 작업 이력 / 인수인계 문서
 
-최종 갱신: 2026-03-19
+최종 갱신: 2026-03-22
+
+## 추가: 2026-03-22 fake-long 실험 UI / 기기 대시보드 / 요약 지표 보정
+
+이 섹션은 2026-03-20~2026-03-22 동안 진행한 `Fake-Long` 실험 도구, 기기 웹 대시보드, 부팅/로딩 자산, recent drive summary 보정 작업을 묶어서 정리한다.
+
+### 1. Fake-Long 실험 경로 추가
+
+- GM stock ACC 차량에서 broad `CC_LONG` safety bit를 항상 켜면 시동 직후 stock ACC fault가 발생하는 차량이 있었음
+- 그래서 fake-long 쪽은 `stock ACC는 그대로 두고, 버튼만 흉내 내는 실험 경로`로 다시 분리했음
+
+#### 추가된 설정 / 파라미터
+
+- `common/params_keys.h`
+  - `FakeLong`
+  - `FakeLongDebug`
+  - `FakeLongTestButton`
+  - `FakeLongTestUI`
+
+- `frogpilot/common/frogpilot_variables.py`
+  - 위 토글들을 조건 없이 읽도록 연결
+
+- `frogpilot/ui/qt/offroad/vehicle_settings.cc`
+- `frogpilot/ui/qt/offroad/vehicle_settings.h`
+  - `Vehicle Settings` 안에 `Long` 패널을 새로 만들고:
+    - `Fake-Long`
+    - `Fake-Long Test UI`
+    를 항상 보이도록 추가
+
+#### GM safety / interface 변경
+
+- `opendbc_repo/opendbc/car/gm/values.py`
+  - `FLAG_GM_FAKE_LONG_BUTTONS = 128` 추가
+
+- `opendbc_repo/opendbc/car/interfaces.py`
+  - GM stock ACC + forward camera 경로에서 `FakeLong` / `FakeLongTestUI` 가 켜졌을 때만 위 fake-long button safety bit를 설정
+
+- `opendbc_repo/opendbc/safety/modes/gm.h`
+  - broad `gm_cc_long` 대신, fake-long 전용 button allow path 추가
+  - `SET / RESUME / UNPRESS / MAIN` 을 stock ACC button emulation 실험용으로 허용
+
+#### fake-long runtime / debug UI
+
+- `opendbc_repo/opendbc/car/gm/carcontroller.py`
+  - fake-long 테스트 버튼 및 자동 버튼 로직을 실험용으로 누적 정리
+  - `FakeLongDebug` memory param으로 다음 상태를 노출:
+    - `armed`
+    - `paused`
+    - `userSet`
+    - `commanded`
+    - `target`
+    - `last`
+  - 디스인게이지 / 리인게이지 시 user ACC target 유지 실험
+  - `10 km/h` 미만에선 버튼 신호를 보내지 않도록 guard 추가
+  - 현재 속도 기반 fake target 추종 로직을 계속 조정 중
+
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h`
+  - onroad에 fake-long 실험 UI 추가:
+    - `FAKE`
+    - `ACC`
+    - `ARMED`
+    - `PAUSED`
+    - `TARGET`
+    - `LAST`
+  - `Fake-Long Test UI` 켠 상태에서:
+    - `MAIN`
+    - `CANCEL`
+    - `RES`
+    - `SET`
+    버튼 패널을 띄우도록 추가
+  - fake-long 카드 상태에 따라 색상 변화:
+    - 상승 중
+    - 하강 중
+    - paused
+    - ready/off
+
+- `selfdrive/ui/qt/onroad/onroad_home.cc`
+  - fake-long 버튼/카드가 이벤트, 정차 타이머, 오토홀드 UI에 가려지지 않도록 overlay 우선순위 조정
+
+### 2. recent drive summary 사용 비율 보정
+
+- stock ACC 차량에서 recent drive summary 의 `오픈파일럿 사용 비율`이 실제 lateral 사용 시간이 있어도 `0%` 로 보이는 문제가 있었음
+- 원인은 `AOLTime + LongitudinalTime` 만 사용해서, lateral-only 사용이 계산에서 빠지던 구조였음
+
+- 수정:
+  - `selfdrive/ui/qt/home.cc`
+  - `frogpilot/ui/qt/widgets/drive_summary.cc`
+
+- 새 계산:
+  - `engaged_time = min(TrackedTime, max(LateralTime, LongitudinalTime) + AOLTime)`
+
+- 결과:
+  - stock ACC / lateral-only 차량도 실제 engage 비율에 더 가깝게 recent summary 가 표시되도록 보정됨
+
+### 3. 기기 웹 대시보드 추가
+
+- 새 경로:
+  - `tools/device_dashboard_mock/`
+  - 파일:
+    - `server.py`
+    - `index.html`
+    - `app.js`
+    - `styles.css`
+    - `run_dashboard.sh`
+    - `frogpilot-dashboard.service` (참고용)
+
+#### 기능
+
+- `상태`
+  - 차량 이름
+  - 차량 전압
+  - 차량 속도
+  - ACC 속도
+  - openpilot 활성/비활성 상태
+  - 기기 상태 / openpilot 상태 / 차량 정보 카드
+
+- `설정`
+  - 실제 Params read/write
+  - 브랜치 / 커밋 / Params 수 요약
+  - 토글/숫자/문자 설정 편집
+
+- `통계`
+  - `FrogPilotStats` 를 raw key dump 대신 한국어 카테고리로 정리:
+    - 운행 개요
+    - 제어 사용
+    - 개입 / 정차
+    - 주행 모델
+    - 주행 성향
+    - 날씨별 주행
+    - 이벤트 / 개구리 통계
+
+- `조회`
+  - tmux
+  - comma.service
+  - dashboard server
+  - system journal
+  로그 확인
+
+#### 구현 포인트
+
+- `server.py`
+  - device일 때 `/data/params` 기준 실제 Params 읽기/쓰기
+  - `cereal.messaging` 이 가능하면 live:
+    - `carState`
+    - `selfdriveState`
+    - `deviceState`
+    - `pandaStates`
+    - `peripheralState`
+    실시간 스냅샷 사용
+  - `/api/meta`, `/api/status`, `/api/stats`, `/api/params`, `/api/logs` 제공
+
+- `app.js`
+  - status 1초 polling
+  - meta 5초 polling
+  - logs 2초 polling
+  - stats 10초 polling
+  - 연결 끊김 시 상단에 offline 상태 표시
+  - Params 토글 저장 시 UI가 한 박자 늦게 반영되던 버그 수정
+
+- `styles.css`
+  - 모바일 환경에 맞춘 dense layout 반복 조정
+  - 상태 / 설정 / 통계 / 조회 탭 모두 모바일에서 정보량은 늘리고 가로 overflow는 줄이는 방향으로 수정
+
+### 4. 부팅 / 로딩 자산
+
+- `frogpilot/assets/other_images/frogpilot_boot_logo.jpg`
+  - FrogPilot boot logo 원본을 stock background 이미지로 교체
+  - 이유:
+    - 부팅할 때 manager/FrogPilot 함수가 `/usr/comma/bg.jpg` 를 다시 덮어써서, 수동으로 stock bg를 넣어도 다음 부팅에 다시 FrogPilot 로고로 돌아가던 문제를 원천 차단
+
+- `selfdrive/assets/images/spinner_comma.png`
+- `selfdrive/assets/images/spinner_track.png`
+  - spinner 이미지 2종 교체
+
+### 5. 대시보드 자동 실행
+
+- `launch_chffrplus.sh`
+  - `launch_device_dashboard()` 추가
+  - openpilot launch 과정에서 `tools/device_dashboard_mock/run_dashboard.sh` 를 같이 띄우도록 연결
+
+- 이유:
+  - 기기 `/etc/systemd/system` 이 read-only 라서 persistent custom systemd unit 설치가 불가능했음
+  - 대신 branch가 이미 매 부팅마다 타는 `launch_chffrplus.sh` 에 붙이면:
+    - 재부팅 후 자동 실행
+    - branch restart 후 자동 복구
+    가 가능함
+
+### 현재 정리 상태
+
+- `Fake-Long` 은 GM stock ACC 실험 도구로 계속 조정 중이며, 완성된 long replacement 로 문서화하지 않음
+- 기기 웹 대시보드는 `http://<device-ip>:8123` 에서 접근 가능
+- 모바일에서도 사용할 수 있도록 layout을 계속 다듬어둔 상태
+- boot background는 이제 다시 FrogPilot 전용 배경으로 되돌아가지 않고 stock 배경을 유지함
 
 ## 추가: 2026-03-19 precompiled 다운로드 모델 실제 실행 복구 및 onroad 검증 완료
 

@@ -382,7 +382,10 @@ void OffroadHome::updateDriveSummaryStats() {
   };
 
   const int tracked_time = qMax(0, qRound(diff_double("TrackedTime")));
-  const int engaged_time = qMax(0, qRound(diff_double("AOLTime") + diff_double("LongitudinalTime")));
+  const int aol_time = qMax(0, qRound(diff_double("AOLTime")));
+  const int lateral_time = qMax(0, qRound(diff_double("LateralTime")));
+  const int longitudinal_time = qMax(0, qRound(diff_double("LongitudinalTime")));
+  const int engaged_time = qMin(tracked_time, qMax(lateral_time, longitudinal_time) + aol_time);
   const double drive_meters = qMax(0.0, diff_double("FrogPilotMeters"));
 
   const int engagement_percent = tracked_time > 0 ? engaged_time * 100 / tracked_time : 0;

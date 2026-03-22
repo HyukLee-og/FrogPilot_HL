@@ -1,0 +1,17 @@
+[Unit]
+Description=FrogPilot Device Dashboard
+After=network-online.target comma.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=comma
+Group=comma
+WorkingDirectory=/data/openpilot/tools/device_dashboard_mock
+Environment=OPENPILOT_PREFIX=d
+ExecStart=/data/openpilot/tools/device_dashboard_mock/run_dashboard.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

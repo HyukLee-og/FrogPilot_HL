@@ -155,18 +155,21 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent, 
 
   FrogPilotListWidget *gmList = new FrogPilotListWidget(this);
   FrogPilotListWidget *hkgList = new FrogPilotListWidget(this);
+  FrogPilotListWidget *longList = new FrogPilotListWidget(this);
   FrogPilotListWidget *subaruList = new FrogPilotListWidget(this);
   FrogPilotListWidget *toyotaList = new FrogPilotListWidget(this);
   FrogPilotListWidget *vehicleInfoList = new FrogPilotListWidget(this);
 
   ScrollView *gmPanel = new ScrollView(gmList, this);
   ScrollView *hkgPanel = new ScrollView(hkgList, this);
+  ScrollView *longPanel = new ScrollView(longList, this);
   ScrollView *subaruPanel = new ScrollView(subaruList, this);
   ScrollView *toyotaPanel = new ScrollView(toyotaList, this);
   ScrollView *vehicleInfoPanel = new ScrollView(vehicleInfoList, this);
 
   vehiclesLayout->addWidget(gmPanel);
   vehiclesLayout->addWidget(hkgPanel);
+  vehiclesLayout->addWidget(longPanel);
   vehiclesLayout->addWidget(subaruPanel);
   vehiclesLayout->addWidget(toyotaPanel);
   vehiclesLayout->addWidget(vehicleInfoPanel);
@@ -216,6 +219,14 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent, 
         vehiclesLayout->setCurrentWidget(hkgPanel);
       });
       vehicleToggle = hkgButton;
+
+    } else if (param == "LongToggles") {
+      ButtonControl *longButton = new ButtonControl(title, tr("LONG"), desc);
+      QObject::connect(longButton, &ButtonControl::clicked, [vehiclesLayout, longPanel, this]() {
+        openDescriptions(forceOpenDescriptions, toggles);
+        vehiclesLayout->setCurrentWidget(longPanel);
+      });
+      vehicleToggle = longButton;
 
     } else if (param == "SubaruToggles") {
       ButtonControl *subaruButton = new ButtonControl(title, tr("MANAGE"), desc);
@@ -271,6 +282,8 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent, 
       gmList->addItem(vehicleToggle);
     } else if (hkgKeys.contains(param)) {
       hkgList->addItem(vehicleToggle);
+    } else if (longKeys.contains(param)) {
+      longList->addItem(vehicleToggle);
     } else if (subaruKeys.contains(param)) {
       subaruList->addItem(vehicleToggle);
     } else if (toyotaKeys.contains(param)) {
@@ -280,7 +293,10 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent, 
     } else {
       settingsList->addItem(vehicleToggle);
 
-      parentKeys.insert(param);
+      if (param == "GMToggles" || param == "HKGToggles" || param == "SubaruToggles" ||
+          param == "ToyotaToggles" || param == "VehicleInfo" || param == "LongToggles") {
+        parentKeys.insert(param);
+      }
     }
 
     if (ButtonControl *buttonControl = qobject_cast<ButtonControl*>(vehicleToggle)) {
@@ -291,6 +307,42 @@ FrogPilotVehiclesPanel::FrogPilotVehiclesPanel(FrogPilotSettingsWindow *parent, 
       update();
     });
     QObject::connect(vehicleToggle, &AbstractControl::showDescriptionEvent, [this]() {
+      update();
+    });
+  }
+
+  for (const auto &[param, title, desc] : std::vector<std::tuple<QString, QString, QString>>{
+         {"LongToggles", tr("Long"), tr("<b>Stock ACC fake-long controls.</b> Configure button-based speed ramping and the validation UI here.")},
+         {"FakeLong", tr("Fake-Long"), tr("<b>Use stock ACC button inputs to ramp the set speed more gently.</b> Intended for GM vehicles using stock ACC instead of openpilot longitudinal control.")},
+         {"FakeLongTestUI", tr("Fake-Long Test UI"), tr("<b>Show the fake-long button sniffing test UI.</b> Intended for development and validation while tuning stock ACC button automation.")}
+       }) {
+    AbstractControl *toggle = new ParamControl(param, title, desc, "");
+    if (param == "LongToggles") {
+      delete toggle;
+      ButtonControl *longButton = new ButtonControl(title, tr("LONG"), desc);
+      QObject::connect(longButton, &ButtonControl::clicked, [vehiclesLayout, longPanel, this]() {
+        openDescriptions(forceOpenDescriptions, toggles);
+        vehiclesLayout->setCurrentWidget(longPanel);
+      });
+      toggle = longButton;
+    }
+
+    toggles[param] = toggle;
+    if (longKeys.contains(param)) {
+      longList->addItem(toggle);
+    } else {
+      settingsList->addItem(toggle);
+      parentKeys.insert(param);
+    }
+
+    if (ButtonControl *buttonControl = qobject_cast<ButtonControl*>(toggle)) {
+      QObject::connect(buttonControl, &ButtonControl::clicked, this, &FrogPilotVehiclesPanel::openSubPanel);
+    }
+
+    QObject::connect(toggle, &AbstractControl::hideDescriptionEvent, [this]() {
+      update();
+    });
+    QObject::connect(toggle, &AbstractControl::showDescriptionEvent, [this]() {
       update();
     });
   }
@@ -410,6 +462,10 @@ void FrogPilotVehiclesPanel::updateToggles() {
       setVisible &= parent->isVolt && !parent->hasSNG;
     }
 
+    if (key == "LongToggles" || longKeys.contains(key)) {
+      setVisible = true;
+    }
+
     toggle->setVisible(setVisible);
 
     if (setVisible) {
@@ -417,6 +473,8 @@ void FrogPilotVehiclesPanel::updateToggles() {
         toggles["GMToggles"]->setVisible(true);
       } else if (hkgKeys.contains(key)) {
         toggles["HKGToggles"]->setVisible(true);
+      } else if (longKeys.contains(key)) {
+        toggles["LongToggles"]->setVisible(true);
       } else if (subaruKeys.contains(key)) {
         toggles["SubaruToggles"]->setVisible(true);
       } else if (toyotaKeys.contains(key)) {

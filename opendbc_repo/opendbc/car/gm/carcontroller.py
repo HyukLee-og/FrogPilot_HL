@@ -1,4 +1,7 @@
 import numpy as np
+import time
+import json
+from openpilot.common.params import Params
 from opendbc.can import CANPacker
 from opendbc.car import Bus, DT_CTRL, create_gas_interceptor_command, structs
 from opendbc.car.lateral import apply_driver_steer_torque_limits
@@ -10,11 +13,37 @@ from opendbc.car.interfaces import CarControllerBase
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 NetworkLocation = structs.CarParams.NetworkLocation
 LongCtrlState = structs.CarControl.Actuators.LongControlState
+ButtonType = structs.CarState.ButtonEvent.Type
 
 # Camera cancels up to 0.1s after brake is pressed, ECM allows 0.5s
 CAMERA_CANCEL_DELAY_FRAMES = 10
 # Enforce a minimum interval between steering messages to avoid a fault
 MIN_STEER_MSG_INTERVAL_MS = 15
+
+FAKE_LONG_BUTTON_INTERVAL_FRAMES = max(1, int(round(0.6 / DT_CTRL)))
+FAKE_LONG_PAUSE_FRAMES = max(1, int(round(2.0 / DT_CTRL)))
+FAKE_LONG_IGNORE_ECHO_FRAMES = max(1, int(round(0.2 / DT_CTRL)))
+FAKE_LONG_MIN_SET_SPEED_MS = 25 * CV.KPH_TO_MS
+FAKE_LONG_MIN_SEND_SPEED_MS = 10 * CV.KPH_TO_MS
+FAKE_LONG_PLANNER_HEADROOM_KPH = 2.0
+FAKE_LONG_PLANNER_HEADROOM_MPH = 1.0
+FAKE_LONG_FAST_INTERVAL_FRAMES = max(1, int(round(0.18 / DT_CTRL)))
+FAKE_LONG_MEDIUM_INTERVAL_FRAMES = max(1, int(round(0.24 / DT_CTRL)))
+FAKE_LONG_SLOW_INTERVAL_FRAMES = max(1, int(round(0.32 / DT_CTRL)))
+FAKE_LONG_RELEASE_DELAY_FRAMES = max(1, int(round(0.03 / DT_CTRL)))
+FAKE_LONG_DECEL_TRACK_FACTOR = 1.0
+FAKE_LONG_DECEL_MIN_STEP_MS = 0.25
+FAKE_LONG_FOLLOW_HEADROOM_KPH = 10.0
+FAKE_LONG_FOLLOW_HEADROOM_MPH = 6.0
+FAKE_LONG_RECOVERY_MARGIN_KPH = 10.0
+FAKE_LONG_RECOVERY_MARGIN_MPH = 6.0
+FAKE_LONG_TEST_BUTTON_MAX_AGE_S = 2.0
+FAKE_LONG_SMOOTH_UP_KPH_PER_S = 8.0
+FAKE_LONG_SMOOTH_UP_MPH_PER_S = 5.0
+FAKE_LONG_SMOOTH_DOWN_KPH_PER_S = 14.0
+FAKE_LONG_SMOOTH_DOWN_MPH_PER_S = 9.0
+FAKE_LONG_TARGET_HYST_KPH = 1.0
+FAKE_LONG_TARGET_HYST_MPH = 1.0
 
 
 class CarController(CarControllerBase):
@@ -32,6 +61,7 @@ class CarController(CarControllerBase):
     self.lka_icon_status_last = (False, False)
 
     self.params = CarControllerParams(self.CP)
+    self.params_memory = Params(memory=True)
 
     self.packer_pt = CANPacker(DBC[self.CP.carFingerprint][Bus.pt])
     self.packer_obj = CANPacker(DBC[self.CP.carFingerprint][Bus.radar])
@@ -42,6 +72,270 @@ class CarController(CarControllerBase):
 
     self.apply_speed = 0
     self.pedal_steady = 0
+    self.fake_long_target_speed = 0.0
+    self.fake_long_pause_until = 0
+    self.fake_long_ignore_button_until = 0
+    self.fake_long_sync_target_until = 0
+    self.fake_long_commanded_speed = 0.0
+    self.fake_long_user_set_speed = 0.0
+    self.fake_long_prev_cruise_enabled = False
+    self.fake_long_prev_v_ego = 0.0
+    self.fake_long_session_armed = False
+    self.fake_long_prev_session_cruise_enabled = False
+    self.fake_long_last_button = ""
+    self.fake_long_debug_cache = ""
+    self.fake_long_pending_release = False
+    self.fake_long_release_frame = 0
+    self.fake_long_release_idx = 0
+
+  def reset_fake_long(self, clear_user_set: bool = True) -> None:
+    self.fake_long_target_speed = 0.0
+    self.fake_long_pause_until = 0
+    self.fake_long_ignore_button_until = 0
+    self.fake_long_sync_target_until = 0
+    self.fake_long_commanded_speed = 0.0
+    self.fake_long_prev_v_ego = 0.0
+    if clear_user_set:
+      self.fake_long_user_set_speed = 0.0
+
+  def update_fake_long_debug(self, *, active, test_ui, cruise_enabled, cruise_available, current_set_speed, current_v_ego):
+    payload = {
+      "active": bool(active),
+      "testUI": bool(test_ui),
+      "armed": bool(self.fake_long_session_armed),
+      "paused": bool(self.frame < self.fake_long_pause_until),
+      "cruiseEnabled": bool(cruise_enabled),
+      "cruiseAvailable": bool(cruise_available),
+      "target": round(float(self.fake_long_target_speed), 3),
+      "commanded": round(float(self.fake_long_commanded_speed), 3),
+      "set": round(float(current_set_speed), 3),
+      "userSet": round(float(self.fake_long_user_set_speed), 3),
+      "vEgo": round(float(current_v_ego), 3),
+      "last": self.fake_long_last_button,
+    }
+    encoded = json.dumps(payload, separators=(",", ":"))
+    if encoded != self.fake_long_debug_cache:
+      self.params_memory.put("FakeLongDebug", encoded)
+      self.fake_long_debug_cache = encoded
+
+  def update_fake_long_session_state(self, CS) -> None:
+    cruise_enabled = CS.out.cruiseState.enabled
+    cruise_available = CS.out.cruiseState.available
+    current_v_ego = float(CS.out.vEgo)
+
+    # Require one manual stock ACC engagement after each ignition/offline cycle
+    # before fake-long is allowed to emit any synthetic cruise buttons.
+    if not cruise_available and current_v_ego < 1.0:
+      self.fake_long_session_armed = False
+      self.reset_fake_long(clear_user_set=True)
+    elif cruise_enabled and not self.fake_long_prev_session_cruise_enabled:
+      self.fake_long_session_armed = True
+
+    self.fake_long_prev_session_cruise_enabled = cruise_enabled
+
+  @staticmethod
+  def get_fake_long_interval_frames(diff_units: float) -> int:
+    if diff_units >= 8.0:
+      return FAKE_LONG_FAST_INTERVAL_FRAMES
+    if diff_units >= 4.0:
+      return FAKE_LONG_MEDIUM_INTERVAL_FRAMES
+    return FAKE_LONG_SLOW_INTERVAL_FRAMES
+
+  def create_fake_long_button_command(self, CS, button):
+    return gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, CS.buttons_counter, button)
+
+  def create_fake_long_press_command(self, CS, button):
+    self.fake_long_pending_release = True
+    self.fake_long_release_frame = self.frame + FAKE_LONG_RELEASE_DELAY_FRAMES
+    self.fake_long_release_idx = CS.buttons_counter
+    return gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, CS.buttons_counter, button)
+
+  def consume_fake_long_release(self):
+    if not self.fake_long_pending_release or self.frame < self.fake_long_release_frame:
+      return None
+
+    self.fake_long_pending_release = False
+    self.last_button_frame = self.frame
+    return gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, self.fake_long_release_idx, CruiseButtons.UNPRESS)
+
+  def create_fake_long_command(self, CS, actuators, frogpilot_toggles):
+    fake_long_enabled = bool(getattr(frogpilot_toggles, "fake_long", False))
+    test_ui_enabled = bool(getattr(frogpilot_toggles, "fake_long_test_ui", False))
+    stock_acc_path = self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl and self.CP.networkLocation == NetworkLocation.fwdCamera
+
+    if not (fake_long_enabled and stock_acc_path):
+      self.reset_fake_long(clear_user_set=True)
+      self.update_fake_long_debug(active=False, test_ui=test_ui_enabled, cruise_enabled=CS.out.cruiseState.enabled,
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=float(CS.out.cruiseState.speed),
+                                  current_v_ego=float(CS.out.vEgo))
+      return None
+
+    cruise_enabled = CS.out.cruiseState.enabled
+    current_set_speed = float(CS.out.cruiseState.speed)
+    current_v_ego = float(CS.out.vEgo)
+
+    if not cruise_enabled:
+      self.fake_long_prev_cruise_enabled = False
+      self.reset_fake_long(clear_user_set=False)
+      self.apply_speed = current_set_speed
+      self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
+                                  current_v_ego=current_v_ego)
+      return None
+
+    if current_v_ego < FAKE_LONG_MIN_SEND_SPEED_MS:
+      self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
+                                  current_v_ego=current_v_ego)
+      return None
+
+    if not self.fake_long_session_armed:
+      self.reset_fake_long(clear_user_set=False)
+      self.apply_speed = current_set_speed
+      self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
+                                  current_v_ego=current_v_ego)
+      return None
+
+    is_metric = bool(getattr(frogpilot_toggles, "is_metric", True))
+    speed_unit_to_ms = CV.KPH_TO_MS if is_metric else CV.MPH_TO_MS
+    planner_headroom = (FAKE_LONG_PLANNER_HEADROOM_KPH if is_metric else FAKE_LONG_PLANNER_HEADROOM_MPH) * speed_unit_to_ms
+    follow_headroom = (FAKE_LONG_FOLLOW_HEADROOM_KPH if is_metric else FAKE_LONG_FOLLOW_HEADROOM_MPH) * speed_unit_to_ms
+    recovery_margin = (FAKE_LONG_RECOVERY_MARGIN_KPH if is_metric else FAKE_LONG_RECOVERY_MARGIN_MPH) * speed_unit_to_ms
+    speed_hysteresis = 0.5 * speed_unit_to_ms
+    target_hysteresis = (FAKE_LONG_TARGET_HYST_KPH if is_metric else FAKE_LONG_TARGET_HYST_MPH) * speed_unit_to_ms
+    smooth_up_step = (FAKE_LONG_SMOOTH_UP_KPH_PER_S if is_metric else FAKE_LONG_SMOOTH_UP_MPH_PER_S) * speed_unit_to_ms * DT_CTRL
+    smooth_down_step = (FAKE_LONG_SMOOTH_DOWN_KPH_PER_S if is_metric else FAKE_LONG_SMOOTH_DOWN_MPH_PER_S) * speed_unit_to_ms * DT_CTRL
+    planner_speed = float(getattr(actuators, "speed", 0.0) or 0.0)
+
+    user_set_button_event = any(be.type in (ButtonType.accelCruise, ButtonType.decelCruise) for be in CS.out.buttonEvents)
+    user_other_button_event = any(be.type in (ButtonType.cancel, ButtonType.mainCruise) for be in CS.out.buttonEvents)
+    manual_override = CS.out.gasPressed or CS.out.brakePressed or user_set_button_event or user_other_button_event
+
+    if not self.fake_long_prev_cruise_enabled:
+      if self.fake_long_user_set_speed <= 0.0:
+        self.fake_long_user_set_speed = current_set_speed
+      initial_fake_speed = max(FAKE_LONG_MIN_SET_SPEED_MS, min(current_set_speed, current_v_ego))
+      self.fake_long_target_speed = initial_fake_speed
+      self.fake_long_commanded_speed = initial_fake_speed
+      self.fake_long_prev_v_ego = current_v_ego
+    elif self.fake_long_user_set_speed <= 0.0:
+      self.fake_long_user_set_speed = current_set_speed
+      self.fake_long_target_speed = current_set_speed
+      self.fake_long_commanded_speed = current_set_speed
+      self.fake_long_prev_v_ego = current_v_ego
+
+    # Only direct RES/SET changes should update the stored user ACC target.
+    if user_set_button_event and self.frame > self.fake_long_ignore_button_until:
+      self.fake_long_user_set_speed = current_set_speed
+
+    if manual_override and self.frame > self.fake_long_ignore_button_until:
+      self.fake_long_pause_until = self.frame + FAKE_LONG_PAUSE_FRAMES
+
+    self.fake_long_prev_cruise_enabled = True
+
+    stored_user_set_speed = max(FAKE_LONG_MIN_SET_SPEED_MS, self.fake_long_user_set_speed if self.fake_long_user_set_speed > 0.0 else current_set_speed)
+
+    if planner_speed > 0.0:
+      raw_desired_set_speed = max(FAKE_LONG_MIN_SET_SPEED_MS, min(stored_user_set_speed, planner_speed + planner_headroom))
+    else:
+      raw_desired_set_speed = stored_user_set_speed
+
+    if current_v_ego + speed_hysteresis < stored_user_set_speed:
+      raw_desired_set_speed = min(raw_desired_set_speed, max(FAKE_LONG_MIN_SET_SPEED_MS, current_v_ego))
+    elif raw_desired_set_speed < current_set_speed:
+      raw_desired_set_speed = min(raw_desired_set_speed, max(FAKE_LONG_MIN_SET_SPEED_MS, current_v_ego + follow_headroom))
+
+    actual_speed_drop = max(0.0, self.fake_long_prev_v_ego - current_v_ego)
+    self.fake_long_prev_v_ego = current_v_ego
+
+    if self.fake_long_commanded_speed <= 0.0:
+      self.fake_long_commanded_speed = raw_desired_set_speed
+
+    if raw_desired_set_speed < self.fake_long_commanded_speed - target_hysteresis:
+      decel_step = max(actual_speed_drop * FAKE_LONG_DECEL_TRACK_FACTOR, FAKE_LONG_DECEL_MIN_STEP_MS, smooth_down_step)
+      self.fake_long_commanded_speed = max(raw_desired_set_speed, self.fake_long_commanded_speed - decel_step)
+    elif raw_desired_set_speed > self.fake_long_commanded_speed + target_hysteresis:
+      self.fake_long_commanded_speed = min(raw_desired_set_speed, self.fake_long_commanded_speed + smooth_up_step)
+
+    self.fake_long_target_speed = raw_desired_set_speed
+    desired_set_speed = self.fake_long_commanded_speed
+
+    self.apply_speed = desired_set_speed
+
+    if self.frame < self.fake_long_pause_until:
+      self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
+                                  current_v_ego=current_v_ego)
+      return None
+
+    button = CruiseButtons.INIT
+    if current_set_speed > desired_set_speed + speed_hysteresis:
+      button = CruiseButtons.DECEL_SET
+    elif (current_set_speed + speed_hysteresis) < desired_set_speed:
+      button = CruiseButtons.RES_ACCEL
+
+    diff_units = abs(current_set_speed - desired_set_speed) / speed_unit_to_ms
+    interval_frames = self.get_fake_long_interval_frames(diff_units)
+
+    if button != CruiseButtons.INIT and (self.frame - self.last_button_frame) >= interval_frames:
+      self.last_button_frame = self.frame
+      self.fake_long_ignore_button_until = self.frame + FAKE_LONG_IGNORE_ECHO_FRAMES
+      self.fake_long_last_button = "set" if button == CruiseButtons.DECEL_SET else "res"
+      self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
+                                  current_v_ego=current_v_ego)
+      return self.create_fake_long_press_command(CS, button)
+
+    self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
+                                cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
+                                current_v_ego=current_v_ego)
+    return None
+
+  def consume_fake_long_test_button(self, CS, frogpilot_toggles):
+    test_ui_enabled = bool(getattr(frogpilot_toggles, "fake_long_test_ui", False))
+    stock_acc_path = self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl and self.CP.networkLocation == NetworkLocation.fwdCamera
+
+    if not (test_ui_enabled and stock_acc_path):
+      return None
+
+    button_payload = self.params_memory.get("FakeLongTestButton")
+    if not button_payload:
+      return None
+
+    self.params_memory.remove("FakeLongTestButton")
+
+    try:
+      button_key, button_ts = button_payload.split(":", 1)
+      button_age = time.time() - (int(button_ts) / 1000.0)
+    except (TypeError, ValueError):
+      return None
+
+    if button_age < 0 or button_age > FAKE_LONG_TEST_BUTTON_MAX_AGE_S:
+      return None
+
+    button_lookup = {
+      "main": CruiseButtons.MAIN,
+      "cancel": CruiseButtons.CANCEL,
+      "res": CruiseButtons.RES_ACCEL,
+      "set": CruiseButtons.DECEL_SET,
+    }
+    button = button_lookup.get(button_key)
+    if button is None:
+      return None
+
+    if float(CS.out.vEgo) < FAKE_LONG_MIN_SEND_SPEED_MS:
+      return None
+
+    self.last_button_frame = self.frame
+    self.fake_long_ignore_button_until = self.frame + FAKE_LONG_IGNORE_ECHO_FRAMES
+    self.fake_long_pause_until = self.frame + FAKE_LONG_PAUSE_FRAMES
+    self.fake_long_sync_target_until = self.frame + FAKE_LONG_PAUSE_FRAMES
+    self.fake_long_last_button = button_key
+    self.update_fake_long_debug(active=bool(getattr(frogpilot_toggles, "fake_long", False)), test_ui=test_ui_enabled,
+                                cruise_enabled=CS.out.cruiseState.enabled, cruise_available=CS.out.cruiseState.available,
+                                current_set_speed=float(CS.out.cruiseState.speed), current_v_ego=float(CS.out.vEgo))
+    return self.create_fake_long_press_command(CS, button)
 
   # OPGM variables
   @staticmethod
@@ -195,9 +489,21 @@ class CarController(CarControllerBase):
 
       # Stock longitudinal, integrated at camera
       if (self.frame - self.last_button_frame) * DT_CTRL > 0.04:
-        if self.cancel_counter > CAMERA_CANCEL_DELAY_FRAMES:
+        self.update_fake_long_session_state(CS)
+        fake_long_release_send = self.consume_fake_long_release()
+        if fake_long_release_send is not None:
+          can_sends.append(fake_long_release_send)
+        elif self.cancel_counter > CAMERA_CANCEL_DELAY_FRAMES:
           self.last_button_frame = self.frame
           can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, CS.buttons_counter, CruiseButtons.CANCEL))
+        else:
+          fake_long_test_send = self.consume_fake_long_test_button(CS, frogpilot_toggles)
+          if fake_long_test_send is not None:
+            can_sends.append(fake_long_test_send)
+          else:
+            fake_long_send = self.create_fake_long_command(CS, actuators, frogpilot_toggles)
+            if fake_long_send is not None:
+              can_sends.append(fake_long_send)
 
     if self.CP.networkLocation == NetworkLocation.fwdCamera:
       # Silence "Take Steering" alert sent by camera, forward PSCMStatus with HandsOffSWlDetectionStatus=1

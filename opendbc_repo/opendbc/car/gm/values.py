@@ -69,6 +69,7 @@ class GMSafetyFlags(IntFlag):
   FLAG_GM_GAS_INTERCEPTOR = 16
   FLAG_GM_NO_ACC = 32
   FLAG_GM_PEDAL_LONG = 64
+  FLAG_GM_FAKE_LONG_BUTTONS = 128
 
 
 class Footnote(Enum):

@@ -48,6 +48,10 @@ public:
   QPolygonF track_vertices;
 
   QRect adjacentLeadTextRect;
+  QRect fakeLongMainRect;
+  QRect fakeLongCancelRect;
+  QRect fakeLongResRect;
+  QRect fakeLongSetRect;
   QRect leadTextRect;
   QRect setSpeedRect;
 
@@ -64,6 +68,7 @@ private:
   void paintCurveSpeedControl(QPainter &p);
   void paintCurveSpeedControlTraining(QPainter &p);
   void paintBlindspotIcons(QPainter &p);
+  void paintFakeLongTestUI(QPainter &p);
   void paintLateralPaused(QPainter &p);
   void paintLongitudinalPaused(QPainter &p);
   void paintPedalIcons(QPainter &p);
@@ -90,8 +95,12 @@ private:
   bool lateralPaused;
   bool longitudinalPaused;
   bool redLight;
+  bool showFakeLongTestUI;
+  bool showFakeLongButtons;
   bool speedLimitChanged;
   bool weatherDaytime;
+  bool fakeLongArmed;
+  bool fakeLongPaused;
 
   int animationFrameIndex;
   int desiredFollowDistance;
@@ -113,6 +122,9 @@ private:
   float mapboxSpeedLimit;
   float nextSpeedLimit;
   float roadCurvature;
+  float fakeLongApplySpeed;
+  float fakeLongCurrentSpeed;
+  float fakeLongTargetSpeed;
   float setSpeed;
   float slcOverriddenSpeed;
   float speedConversion;
@@ -129,6 +141,7 @@ private:
   QColor blackColor(int alpha = 255) { return QColor(0, 0, 0, alpha); }
   QColor redColor(int alpha = 255) { return QColor(201, 34, 49, alpha); }
 
+  QElapsedTimer fakeLongButtonTimer;
   QElapsedTimer glowTimer;
   QElapsedTimer pendingLimitTimer;
   QElapsedTimer standstillTimer;
@@ -169,6 +182,8 @@ private:
   QSharedPointer<QMovie> weatherSnow;
 
   QString leadDistanceUnit;
+  QString fakeLongActiveButton;
+  QString fakeLongLastButton;
   QString leadSpeedUnit;
   QString roadName;
   QString speedLimitOffsetStr;

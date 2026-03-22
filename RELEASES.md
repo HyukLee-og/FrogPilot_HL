@@ -1,3 +1,44 @@
+Patch Update (2026-03-22, fake-long tooling and device dashboard)
+=================================================================
+* Stock ACC / fake-long tooling
+  * Added `Fake-Long` and `Fake-Long Test UI` toggles under `FrogPilot Settings > Vehicle Settings > Long`
+  * Added a GM stock-ACC button-emulation safety path dedicated to fake-long testing so stock ACC button automation no longer relies on the broader CC_LONG mode that was faulting the stock ACC path
+  * Added the onroad fake-long debug overlay with:
+    * `FAKE / ACC` cards
+    * `ARMED / PAUSED / TARGET / LAST` state chips
+    * `MAIN / CANCEL / RES / SET` validation buttons for the test UI
+  * Added fake-long runtime guards and debug reporting for:
+    * `FakeLongDebug`
+    * `FakeLongTestButton`
+    * no automatic button sends below `10 km/h`
+    * preserving the user ACC target across disengage/re-engage while keeping the fake target separate
+  * Kept fake-long explicitly in an experimental tuning state for GM stock ACC validation rather than marking it as finalized longitudinal replacement behavior
+* Drive summary / stats
+  * Fixed recent-drive engagement percentage so lateral-only usage on stock-ACC cars no longer reports `0%` just because `LongitudinalTime` stayed near zero
+  * Added a new web dashboard stats tab that renders `FrogPilotStats` in Korean categories instead of raw key dumps
+* Device web dashboard
+  * Added a new device dashboard at `http://<device-ip>:8123`
+  * Implemented four tabs:
+    * `상태`
+    * `설정`
+    * `통계`
+    * `조회`
+  * Connected the dashboard to real device/runtime data:
+    * live `deviceState`, `carState`, `selfdriveState`, `pandaStates`, `peripheralState`
+    * real Params read/write
+    * tmux / comma.service / dashboard / system journal log views
+  * Added mobile-specific layout tightening for status/settings/stats/log tabs so the dashboard remains usable from a phone without excessive empty space or horizontal overflow
+  * Hooked the dashboard launch into `launch_chffrplus.sh` so it comes back automatically after device boot / branch restart without a manual SSH launch step
+* Boot / loading visuals
+  * Replaced the FrogPilot boot background asset with the stock background so `/usr/comma/bg.jpg` updates now stay stock-looking even when FrogPilot re-applies the boot image on startup
+  * Updated the spinner image pair:
+    * `spinner_comma.png`
+    * `spinner_track.png`
+* Packaging
+  * Refreshed the checked-in device-side runtime artifacts required by these settings/UI changes:
+    * `common/params_pyx.so`
+    * `selfdrive/ui/ui`
+
 Patch Update (2026-03-19, driving model runtime execution verified)
 ==================================================================
 * Driving model runtime compatibility

@@ -35,6 +35,20 @@ function agnos_init {
   fi
 }
 
+function launch_device_dashboard {
+  local dashboard_script="$DIR/tools/device_dashboard_mock/run_dashboard.sh"
+
+  if [ ! -x "$dashboard_script" ]; then
+    return
+  fi
+
+  mkdir -p /data/media/0/codex_logs
+
+  # Keep a single fresh dashboard instance tied to the current repo checkout.
+  pkill -f "$DIR/tools/device_dashboard_mock/server.py" >/dev/null 2>&1 || true
+  nohup "$dashboard_script" >/data/media/0/codex_logs/device_dashboard_supervisor.out 2>&1 &
+}
+
 function launch {
   # Remove orphaned git lock if it exists on boot
   [ -f "$DIR/.git/index.lock" ] && rm -f $DIR/.git/index.lock
@@ -84,6 +98,10 @@ function launch {
 
   # write tmux scrollback to a file
   tmux capture-pane -pq -S-1000 > /tmp/launch_log
+
+  # Start the web dashboard alongside openpilot so it survives reboots and
+  # branch restarts without any manual SSH step.
+  launch_device_dashboard
 
   # start manager
   cd system/manager

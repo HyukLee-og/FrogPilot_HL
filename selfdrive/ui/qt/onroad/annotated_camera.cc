@@ -122,13 +122,21 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
   const double start_draw_t = millis_since_boot();
 
   QPainter painter(this);
+  const QString route_preview_path = qEnvironmentVariable("ONROAD_ROUTE_IMAGE").trimmed();
+  static QString cached_route_preview_path;
+  static QPixmap cached_route_preview;
+  if (!route_preview_path.isEmpty() && route_preview_path != cached_route_preview_path) {
+    cached_route_preview.load(route_preview_path);
+    cached_route_preview_path = route_preview_path;
+  }
+  const bool has_route_preview = !cached_route_preview.isNull();
 
   // draw camera frame
   {
     std::lock_guard lk(frame_lock);
 
     if (frames.empty()) {
-      if (skip_frame_count > 0) {
+      if (!has_route_preview && skip_frame_count > 0) {
         skip_frame_count--;
         qDebug() << "skipping frame, not ready";
         return;
@@ -159,6 +167,14 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
     painter.beginNativePainting();
     CameraWidget::paintGL();
     painter.endNativePainting();
+  }
+
+  if (frames.empty() && has_route_preview) {
+    const QPixmap scaled_preview = cached_route_preview.scaled(size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    const QRect source_rect((scaled_preview.width() - width()) / 2,
+                            (scaled_preview.height() - height()) / 2,
+                            width(), height());
+    painter.drawPixmap(rect(), scaled_preview, source_rect);
   }
 
   painter.setRenderHint(QPainter::Antialiasing);

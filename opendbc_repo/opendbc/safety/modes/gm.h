@@ -22,6 +22,7 @@ enum {
   GM_BTN_UNPRESS = 1,
   GM_BTN_RESUME = 2,
   GM_BTN_SET = 3,
+  GM_BTN_MAIN = 5,
   GM_BTN_CANCEL = 6,
 };
 
@@ -36,6 +37,7 @@ static bool gm_pcm_cruise = false;
 static bool gm_cc_long = false;
 static bool gm_has_acc = true;
 static bool gm_pedal_long = false;
+static bool gm_fake_long_buttons = false;
 
 static void gm_rx_hook(const CANPacket_t *msg) {
   const int GM_STANDSTILL_THRSLD = 10;  // 0.311kph
@@ -181,13 +183,15 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
   }
 
   // BUTTONS: used for resume spamming and cruise cancellation with stock longitudinal
-  if ((msg->addr == 0x1E1U) && (gm_pcm_cruise || gm_pedal_long || gm_cc_long)) {
+  if ((msg->addr == 0x1E1U) && (gm_pcm_cruise || gm_pedal_long || gm_cc_long || gm_fake_long_buttons)) {
     int button = (msg->data[5] >> 4) & 0x7U;
 
     bool allowed_btn = (button == GM_BTN_CANCEL) && cruise_engaged_prev;
-    // For standard CC, allow spamming of SET / RESUME
-    if (gm_cc_long) {
+    // Allow fake-long to emulate stock ACC steering-wheel buttons without
+    // switching the broad CC_LONG safety mode used by CC-only cars.
+    if (gm_cc_long || gm_fake_long_buttons) {
       allowed_btn |= cruise_engaged_prev && ((button == GM_BTN_SET) || (button == GM_BTN_RESUME) || (button == GM_BTN_UNPRESS));
+      allowed_btn |= (button == GM_BTN_MAIN);
     }
 
     if (!allowed_btn) {
@@ -310,6 +314,9 @@ static safety_config gm_init(uint16_t param) {
 
   const uint16_t GM_PARAM_PEDAL_LONG = 64;
   gm_pedal_long = GET_FLAG(param, GM_PARAM_PEDAL_LONG);
+
+  const uint16_t GM_PARAM_FAKE_LONG_BUTTONS = 128;
+  gm_fake_long_buttons = GET_FLAG(param, GM_PARAM_FAKE_LONG_BUTTONS);
 
   safety_config ret;
   if (gm_hw == GM_CAM) {

@@ -46,8 +46,9 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
   stacked_layout->addWidget(frogpilot_nvg);
   stacked_layout->addWidget(frogpilot_onroad);
 
-  frogpilot_onroad->raise();
   alerts->raise();
+  frogpilot_nvg->raise();
+  frogpilot_onroad->raise();
 
   nvg->frogpilot_nvg = frogpilot_nvg;
 }
@@ -90,6 +91,8 @@ void OnroadWindow::updateState(const UIState &s, const FrogPilotUIState &fs) {
   frogpilot_nvg->setGeometry(rect());
   frogpilot_onroad->setGeometry(rect());
   alerts->raise();
+  frogpilot_nvg->raise();
+  frogpilot_onroad->raise();
 
   frogpilot_nvg->updateState(s, fs);
   frogpilot_onroad->updateState(s, fs);

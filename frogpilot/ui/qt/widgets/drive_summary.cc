@@ -172,9 +172,12 @@ void FrogPilotDriveSummary::showEvent(QShowEvent *event) {
       return result.trimmed();
     };
 
-    int engagedTime = diffDouble("AOLTime") + diffDouble("LongitudinalTime");
-    int experimentalTime = diffDouble("ExperimentalModeTime");
-    int trackedTime = diffDouble("TrackedTime");
+    int trackedTime = qMax(0, qRound(diffDouble("TrackedTime")));
+    int aolTime = qMax(0, qRound(diffDouble("AOLTime")));
+    int lateralTime = qMax(0, qRound(diffDouble("LateralTime")));
+    int longitudinalTime = qMax(0, qRound(diffDouble("LongitudinalTime")));
+    int engagedTime = qMin(trackedTime, qMax(lateralTime, longitudinalTime) + aolTime);
+    int experimentalTime = qMax(0, qRound(diffDouble("ExperimentalModeTime")));
 
     engagementValue->setText(QLocale().toString((trackedTime > 0) ? (engagedTime * 100 / trackedTime) : 0) + "%");
     experimentalModeTimeValue->setText(QLocale().toString((trackedTime > 0) ? (experimentalTime * 100 / trackedTime) : 0) + "%");
