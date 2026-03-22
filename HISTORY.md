@@ -2,6 +2,58 @@
 
 최종 갱신: 2026-03-22
 
+## 추가: 2026-03-22 전원 종료 로직 복원 + 강제 전원 로직 비활성화 토글
+
+이 섹션은 자동 종료를 통째로 막아둔 실험 상태를 정리하고, 기본적으로는 FrogPilot 원래 전원 로직을 다시 살리면서 필요할 때만 강제로 자동 종료를 비활성화할 수 있게 만든 작업을 정리한다.
+
+### 변경 배경
+
+- 이전에는 `system/hardware/power_monitoring.py` 의 `should_shutdown(...)` 이 무조건 `False` 를 반환하도록 바뀌어 있었음
+- 그래서 FrogPilot 설정의:
+  - `Device Shutdown Timer`
+  - `Low-Voltage Cutoff`
+  값을 바꿔도 실제 자동 종료에는 전혀 반영되지 않았음
+
+### 수정 내용
+
+- `system/hardware/power_monitoring.py`
+  - 원래 FrogPilot automatic shutdown 판단 로직 복원
+  - 다만 새 토글이 켜져 있을 때만 예외적으로 `return False`
+
+- `common/params_keys.h`
+  - 새 파라미터:
+    - `DisableForcedPowerLogic`
+  - 기본값:
+    - `0` (`OFF`)
+
+- `frogpilot/common/frogpilot_variables.py`
+  - `toggle.disable_forced_power_logic` 연결
+
+- `frogpilot/ui/qt/offroad/device_settings.cc`
+- `frogpilot/ui/qt/offroad/device_settings.h`
+  - `FrogPilot Settings > Device Settings` 에
+    - `강제 전원 로직 비활성화`
+    토글 추가
+
+### 최종 동작
+
+- 토글 `OFF` (기본값)
+  - FrogPilot 원래 전원 종료 로직 사용
+  - `Device Shutdown Timer` 동작
+  - `Low-Voltage Cutoff` 동작
+
+- 토글 `ON`
+  - 자동 전원 종료 로직 전체 우회
+  - 사실상 이전 실험 상태처럼 자동으로는 꺼지지 않음
+
+### 빌드/반영
+
+- 이 변경은 `params key` + `Device Settings UI` 변경이 함께 있으므로:
+  - `common/params_pyx.so`
+  - `selfdrive/ui/ui`
+  를 다시 빌드해야 함
+- 이번 반영은 `기기 직접 빌드`가 아니라 `UTM device-ABI 빌드` 후 결과물만 기기에 복사하는 방식으로 처리했음
+
 ## 추가: 2026-03-22 fake-long 실험 UI / 기기 대시보드 / 요약 지표 보정
 
 이 섹션은 2026-03-20~2026-03-22 동안 진행한 `Fake-Long` 실험 도구, 기기 웹 대시보드, 부팅/로딩 자산, recent drive summary 보정 작업을 묶어서 정리한다.

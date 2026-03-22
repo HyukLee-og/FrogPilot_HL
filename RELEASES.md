@@ -1,3 +1,16 @@
+Patch Update (2026-03-22, power logic toggle restore)
+=====================================================
+* Device power management
+  * Restored the original FrogPilot automatic power-down logic so `Device Shutdown Timer` and `Low-Voltage Cutoff` work again by default
+  * Added a new `강제 전원 로직 비활성화` toggle under `FrogPilot Settings > Device Settings`
+    * default `OFF`
+    * `OFF`: original FrogPilot shutdown timer / low-voltage behavior is active
+    * `ON`: automatic power-down logic is fully bypassed, matching the previous `never shut down automatically` test behavior
+* Packaging
+  * Refreshed the checked-in device-side runtime artifacts required by the new power-logic toggle:
+    * `common/params_pyx.so`
+    * `selfdrive/ui/ui`
+
 Patch Update (2026-03-22, fake-long tooling and device dashboard)
 =================================================================
 * Stock ACC / fake-long tooling
