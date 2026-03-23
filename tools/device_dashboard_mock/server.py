@@ -21,6 +21,8 @@ WEB_ROOT = REPO_ROOT / "tools" / "device_dashboard_mock"
 PARAMS_HEADER = REPO_ROOT / "common" / "params_keys.h"
 DEFAULT_PORT = 8123
 KEY_LINE_RE = re.compile(r'^\s*\{"([^"]+)",\s*\{(.*)\}\},?\s*$')
+APN_STATE_PATH = Path("/data/media/0/apn_bridge/bridge_state.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "apn_bridge" / "bridge_state.json"
+APN_HTTP_PATH = Path("/data/media/0/apn_bridge/latest_carrot_http.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "apn_bridge" / "latest_carrot_http.json"
 
 if str(REPO_ROOT) not in sys.path:
   sys.path.insert(0, str(REPO_ROOT))
@@ -83,6 +85,17 @@ class LiveStateReader:
 
 
 LIVE_READER = LiveStateReader()
+
+PARAMS_CACHE_TTL = 1.0
+META_CACHE_TTL = 15.0
+STATUS_CACHE_TTL = 0.5
+
+GIT_BRANCH = ""
+GIT_COMMIT = ""
+
+_PARAMS_CACHE: dict[str, Any] = {"expires_at": 0.0, "items": None, "mapping": None}
+_META_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
+_STATUS_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
 
 
 def split_top_level(text: str) -> list[str]:
@@ -291,6 +304,11 @@ LOG_SOURCES: dict[str, dict[str, Any]] = {
     "subtitle": "device dashboard server log",
     "command": ["tail", "-n", "250", "/data/media/0/codex_logs/device_dashboard_server.out"],
   },
+  "apn": {
+    "title": "APN BRIDGE",
+    "subtitle": "carrotnavi bridge log",
+    "command": ["tail", "-n", "250", "/data/media/0/codex_logs/apn_bridge.out"],
+  },
   "system": {
     "title": "SYSTEM JOURNAL",
     "subtitle": "최근 시스템 journal",
@@ -355,6 +373,94 @@ def read_frogpilot_stats() -> dict[str, Any]:
     return json.loads(path.read_text())
   except Exception:
     return {}
+
+
+def read_json_file(path: Path) -> dict[str, Any]:
+  if not path.exists():
+    return {}
+  try:
+    return json.loads(path.read_text())
+  except Exception:
+    return {}
+
+
+def build_apn_status(params: dict[str, dict[str, Any]]) -> dict[str, Any]:
+  use_apn = bool(param_value(params, "UseAPN", False))
+  bridge_state = read_json_file(APN_STATE_PATH)
+  latest_http = read_json_file(APN_HTTP_PATH)
+
+  last_http = bridge_state.get("lastCarrotHttp") if isinstance(bridge_state.get("lastCarrotHttp"), dict) else {}
+  if not last_http and latest_http:
+    last_http = latest_http
+
+  last_payload = last_http.get("payload") if isinstance(last_http.get("payload"), dict) else {}
+  last_received_at = last_http.get("receivedAt") or bridge_state.get("updatedAt") or 0.0
+  try:
+    last_received_at = float(last_received_at)
+  except Exception:
+    last_received_at = 0.0
+
+  age_sec = max(0.0, time.time() - last_received_at) if last_received_at else None
+  connected = bool(last_http) and age_sec is not None and age_sec < 10.0
+
+  broadcast = bridge_state.get("broadcast") if isinstance(bridge_state.get("broadcast"), dict) else {}
+  http_server = bridge_state.get("httpServer") if isinstance(bridge_state.get("httpServer"), dict) else {}
+
+  road_name = last_payload.get("szPosRoadName") or last_payload.get("roadName") or "-"
+  sdi_type = last_payload.get("nSdiType", 0)
+  sdi_section = last_payload.get("nSdiSection", 0)
+  sdi_dist = last_payload.get("nSdiDist", 0)
+  road_limit = last_payload.get("nRoadLimitSpeed", 0)
+  if isinstance(road_limit, (int, float)) and road_limit > 200:
+    road_limit = road_limit / 10.0
+
+  status_label = "CONNECTED" if connected else "WAITING" if use_apn else "OFF"
+  debug_payload = {
+    "useApn": use_apn,
+    "bridgeEnabled": bool(bridge_state.get("enabled", False)),
+    "connected": connected,
+    "routeActive": bool(broadcast.get("CarrotRouteActive", False)),
+    "deviceIp": broadcast.get("ip", "-"),
+    "listenPort": broadcast.get("port", 0),
+    "httpPort": http_server.get("port", 0),
+    "httpPath": http_server.get("path", "-"),
+    "broadcastTargets": bridge_state.get("broadcastTargets", []),
+    "lastPacketKind": last_http.get("kind", "-"),
+    "lastPacketFrom": last_http.get("from", "-"),
+    "lastPacketSize": last_http.get("size", 0),
+    "lastPacketAgeSec": round(age_sec, 1) if age_sec is not None else None,
+    "roadName": road_name,
+    "roadLimitKph": road_limit,
+    "sdiType": sdi_type,
+    "sdiSection": sdi_section,
+    "sdiDistanceM": sdi_dist,
+    "updatedAt": bridge_state.get("updatedAt", 0),
+  }
+
+  return {
+    "useApn": use_apn,
+    "bridgeEnabled": bool(bridge_state.get("enabled", False)),
+    "connected": connected,
+    "statusLabel": status_label,
+    "routeActive": bool(broadcast.get("CarrotRouteActive", False)),
+    "deviceIp": broadcast.get("ip", "-"),
+    "listenPort": broadcast.get("port", 0),
+    "httpPort": http_server.get("port", 0),
+    "httpPath": http_server.get("path", "-"),
+    "broadcastTargets": bridge_state.get("broadcastTargets", []),
+    "lastPacketKind": last_http.get("kind", "-"),
+    "lastPacketFrom": last_http.get("from", "-"),
+    "lastPacketSize": last_http.get("size", 0),
+    "lastPacketAt": last_received_at,
+    "lastPacketAgeSec": round(age_sec, 1) if age_sec is not None else None,
+    "roadName": road_name,
+    "roadLimitKph": road_limit if road_limit else "-",
+    "sdiType": sdi_type if sdi_type else "-",
+    "sdiSection": sdi_section if sdi_section else "-",
+    "sdiDistanceM": sdi_dist if sdi_dist else "-",
+    "message": bridge_state.get("message", ""),
+    "debugJson": json.dumps(debug_payload, ensure_ascii=False, indent=2),
+  }
 
 
 def format_time_compact(seconds: Any) -> str:
@@ -579,6 +685,22 @@ def git_output(args: list[str], default: str = "-") -> str:
     return default
 
 
+def init_static_repo_info() -> None:
+  global GIT_BRANCH, GIT_COMMIT
+  GIT_BRANCH = git_output(["branch", "--show-current"])
+  GIT_COMMIT = git_output(["rev-parse", "--short", "HEAD"])
+
+
+def invalidate_runtime_caches() -> None:
+  _PARAMS_CACHE["expires_at"] = 0.0
+  _PARAMS_CACHE["items"] = None
+  _PARAMS_CACHE["mapping"] = None
+  _META_CACHE["expires_at"] = 0.0
+  _META_CACHE["value"] = None
+  _STATUS_CACHE["expires_at"] = 0.0
+  _STATUS_CACHE["value"] = None
+
+
 def write_atomic(path: Path, data: bytes) -> None:
   path.parent.mkdir(parents=True, exist_ok=True)
   with NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
@@ -677,11 +799,18 @@ def payload_for(meta: ParamMeta, raw: bytes | None) -> dict[str, Any]:
 
 
 def read_all_params() -> list[dict[str, Any]]:
+  now = time.monotonic()
+  if _PARAMS_CACHE["items"] is not None and now < _PARAMS_CACHE["expires_at"]:
+    return _PARAMS_CACHE["items"]
+
   directory = params_dir()
   payloads = []
   for key in sorted(PARAMS_META):
     path = directory / key
     payloads.append(payload_for(PARAMS_META[key], path.read_bytes() if path.exists() else None))
+  _PARAMS_CACHE["items"] = payloads
+  _PARAMS_CACHE["mapping"] = {item["key"]: item for item in payloads}
+  _PARAMS_CACHE["expires_at"] = now + PARAMS_CACHE_TTL
   return payloads
 
 
@@ -702,7 +831,8 @@ def current_value(param: dict[str, Any]) -> Any:
 
 
 def param_map() -> dict[str, dict[str, Any]]:
-  return {item["key"]: item for item in read_all_params()}
+  read_all_params()
+  return _PARAMS_CACHE["mapping"] or {}
 
 
 def param_value(params: dict[str, dict[str, Any]], key: str, fallback: Any = "-") -> Any:
@@ -716,6 +846,10 @@ def param_value(params: dict[str, dict[str, Any]], key: str, fallback: Any = "-"
 
 
 def build_meta() -> dict[str, Any]:
+  now = time.monotonic()
+  if _META_CACHE["value"] is not None and now < _META_CACHE["expires_at"]:
+    return _META_CACHE["value"]
+
   params = read_all_params()
   type_counts: dict[str, int] = {}
   for item in params:
@@ -725,11 +859,11 @@ def build_meta() -> dict[str, Any]:
   is_device_backend = str(params_dir()).startswith("/data/params/")
   mode_label = "Device Params + Messaging Backend" if is_device_backend and LIVE_READER.available else \
                "Device Params Backend" if is_device_backend else "Local Params Backend"
-  return {
+  payload = {
     "mode": "local-filesystem",
     "modeLabel": mode_label,
-    "branch": git_output(["branch", "--show-current"]),
-    "commit": git_output(["rev-parse", "--short", "HEAD"]),
+    "branch": GIT_BRANCH,
+    "commit": GIT_COMMIT,
     "modifiedCount": len([line for line in modified_lines if line.strip()]),
     "paramsRoot": str(params_dir()),
     "prefix": current_prefix(),
@@ -741,9 +875,16 @@ def build_meta() -> dict[str, Any]:
     "liveMessaging": LIVE_READER.available,
     "liveMessagingError": LIVE_READER.error,
   }
+  _META_CACHE["value"] = payload
+  _META_CACHE["expires_at"] = now + META_CACHE_TTL
+  return payload
 
 
 def build_status() -> dict[str, Any]:
+  now = time.monotonic()
+  if _STATUS_CACHE["value"] is not None and now < _STATUS_CACHE["expires_at"]:
+    return _STATUS_CACHE["value"]
+
   params = param_map()
   live = LIVE_READER.snapshot()
 
@@ -790,8 +931,9 @@ def build_status() -> dict[str, Any]:
   if car_seen:
     status_bits.append("CRUISE READY" if bool(car_state.cruiseState.available) else "CRUISE OFF")
   subtitle = " · ".join(status_bits)
+  apn = build_apn_status(params)
 
-  return {
+  payload = {
     "runtime": {
       "vehicleDisplayName": display_name if display_name else "-",
       "subtitle": subtitle,
@@ -804,9 +946,10 @@ def build_status() -> dict[str, Any]:
       "enabledToggle": openpilot_enabled_toggle,
       "updatedAt": time.time(),
     },
+    "apn": apn,
     "device": {
-      "branch": git_output(["branch", "--show-current"]),
-      "commit": git_output(["rev-parse", "--short", "HEAD"]),
+      "branch": GIT_BRANCH,
+      "commit": GIT_COMMIT,
       "paramsRoot": str(params_dir()),
       "prefix": current_prefix(),
       "dongleId": param_value(params, "DongleId"),
@@ -883,6 +1026,9 @@ def build_status() -> dict[str, Any]:
       "drivingModelVersion": param_value(params, "DrivingModelVersion", "-"),
     },
   }
+  _STATUS_CACHE["value"] = payload
+  _STATUS_CACHE["expires_at"] = now + STATUS_CACHE_TTL
+  return payload
 
 
 def encode_value(meta: ParamMeta, body: dict[str, Any]) -> bytes:
@@ -976,6 +1122,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
       encoded = encode_value(meta, self.read_json())
       path = params_dir() / key
       write_atomic(path, encoded)
+      invalidate_runtime_caches()
       self.send_json({"ok": True, "param": payload_for(meta, path.read_bytes())})
     except Exception as exc:
       self.send_json({"error": str(exc)}, status=400)
@@ -995,10 +1142,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     path = params_dir() / key
     if path.exists():
       path.unlink()
+    invalidate_runtime_caches()
     self.send_json({"ok": True, "param": payload_for(meta, None)})
 
 
 def main() -> None:
+  init_static_repo_info()
   port = int(os.environ.get("DEVICE_DASHBOARD_PORT", str(DEFAULT_PORT)))
   default_host = "0.0.0.0" if Path("/data/params").exists() else "127.0.0.1"
   host = os.environ.get("DEVICE_DASHBOARD_HOST", default_host)

@@ -276,6 +276,11 @@ h1 {
   color: #8af1c6;
 }
 
+.pill.warn {
+  background: rgba(255, 192, 92, 0.16);
+  color: #ffd78c;
+}
+
 .pill.neutral {
   background: rgba(255, 255, 255, 0.08);
   color: #cbd8e5;
@@ -408,6 +413,15 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
+}
+
+.compact-json-card {
+  margin-top: 16px;
+}
+
+.log-viewer.log-viewer-compact {
+  max-height: 280px;
+  min-height: 180px;
 }
 
 .panel-header {

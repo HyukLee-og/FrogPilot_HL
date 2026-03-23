@@ -26,8 +26,55 @@ let liveStatusTimer = null;
 let metaRefreshTimer = null;
 let statsRefreshTimer = null;
 let logsRefreshTimer = null;
+let statusRefreshInFlight = false;
+let metaRefreshInFlight = false;
+let statsRefreshInFlight = false;
+let logsRefreshInFlight = false;
+
+const statusCardCache = new Map();
 
 const $ = (id) => document.getElementById(id);
+
+function setText(target, value) {
+  const element = typeof target === "string" ? $(target) : target;
+  if (!element) return;
+  const next = formatValue(value);
+  if (element.textContent !== next) {
+    element.textContent = next;
+  }
+}
+
+function setExactText(target, value) {
+  const element = typeof target === "string" ? $(target) : target;
+  if (!element) return;
+  const next = value ?? "";
+  if (element.textContent !== next) {
+    element.textContent = next;
+  }
+}
+
+function setClass(target, className) {
+  const element = typeof target === "string" ? $(target) : target;
+  if (!element) return;
+  if (element.className !== className) {
+    element.className = className;
+  }
+}
+
+function formatTimeLabel(ts) {
+  if (!ts) return "-";
+  const millis = Number(ts) * 1000;
+  if (!Number.isFinite(millis) || millis <= 0) return "-";
+  return new Date(millis).toLocaleTimeString("ko-KR", { hour12: false });
+}
+
+function formatAgeLabel(ageSec) {
+  if (ageSec === null || ageSec === undefined || ageSec === "-" || Number.isNaN(Number(ageSec))) return "-";
+  const age = Number(ageSec);
+  if (!Number.isFinite(age)) return "-";
+  if (age < 1) return "방금";
+  return `${age.toFixed(1)}초 전`;
+}
 
 async function api(path, options = {}) {
   const controller = new AbortController();
@@ -138,7 +185,9 @@ function setActiveTab(nextTab) {
     panel.classList.toggle("active", panel.dataset.panel === nextTab);
   });
 
-  if (nextTab === "stats") {
+  if (nextTab === "status") {
+    refreshLiveStatusView().catch(() => {});
+  } else if (nextTab === "stats") {
     refreshStatsOnly().then(renderStats).catch(() => {});
   } else if (nextTab === "query") {
     refreshLogsOnly().then(renderLogs).catch(() => {});
@@ -186,6 +235,14 @@ function renderHero() {
   $("speedValue").textContent = state.meta.totalKeys;
   $("accValue").textContent = state.meta.presentKeys;
   $("fakeValue").textContent = state.meta.frogpilotKeys;
+
+  if (state.status?.apn) {
+    $("apnConnectionValue").textContent = state.status.apn.statusLabel;
+    $("apnBridgeValue").textContent = state.status.apn.bridgeEnabled ? "RUNNING" : "IDLE";
+    $("apnPacketValue").textContent = state.status.apn.lastPacketKind !== "-" ?
+      `${state.status.apn.lastPacketKind} · ${formatAgeLabel(state.status.apn.lastPacketAgeSec)}` :
+      (state.status.apn.message || "-");
+  }
 }
 
 function renderStatusHero() {
@@ -195,34 +252,67 @@ function renderStatusHero() {
     ? `마지막 갱신 ${new Date(runtime.updatedAt * 1000).toLocaleTimeString("ko-KR", { hour12: false })}`
     : "";
 
-  $("statusVehicleTitle").textContent = runtime.vehicleDisplayName;
-  $("statusVehicleSubtitle").textContent = [runtime.subtitle, updatedLabel].filter(Boolean).join(" · ");
-  $("statusVoltageValue").textContent = formatValue(runtime.carVoltage);
-  $("statusSpeedValue").textContent = formatValue(runtime.vehicleSpeed);
-  $("statusAccValue").textContent = formatValue(runtime.accSpeed);
-  $("statusOpenpilotValue").textContent = formatValue(runtime.openpilotState);
+  setExactText("statusVehicleTitle", runtime.vehicleDisplayName || "-");
+  setExactText("statusVehicleSubtitle", [runtime.subtitle, updatedLabel].filter(Boolean).join(" · "));
+  setText("statusVoltageValue", runtime.carVoltage);
+  setText("statusSpeedValue", runtime.vehicleSpeed);
+  setText("statusAccValue", runtime.accSpeed);
+  setText("statusOpenpilotValue", runtime.openpilotState);
 
   const enabledChip = $("statusOpenpilotChip");
-  enabledChip.textContent = runtime.enabledToggle ? "ENABLED" : "DISABLED";
-  enabledChip.className = `pill ${runtime.enabledToggle ? "success" : "neutral"}`;
+  setExactText(enabledChip, runtime.enabledToggle ? "ENABLED" : "DISABLED");
+  setClass(enabledChip, `pill ${runtime.enabledToggle ? "success" : "neutral"}`);
 
   const onroadChip = $("statusOnroadChip");
-  onroadChip.textContent = runtime.isOnroad ? "ONROAD" : "OFFROAD";
-  onroadChip.className = `pill ${runtime.isOnroad ? "success" : "neutral"}`;
+  setExactText(onroadChip, runtime.isOnroad ? "ONROAD" : "OFFROAD");
+  setClass(onroadChip, `pill ${runtime.isOnroad ? "success" : "neutral"}`);
 
   const engagedChip = $("statusEngagedChip");
-  engagedChip.textContent = runtime.isEngaged ? "ENGAGED" : "DISENGAGED";
-  engagedChip.className = `pill ${runtime.isEngaged ? "success" : "neutral"}`;
+  setExactText(engagedChip, runtime.isEngaged ? "ENGAGED" : "DISENGAGED");
+  setClass(engagedChip, `pill ${runtime.isEngaged ? "success" : "neutral"}`);
+
+  const apnChip = $("statusApnChip");
+  if (apnChip && state.status?.apn) {
+    setExactText(apnChip, state.status.apn.connected ? "APN CONNECTED" : state.status.apn.useApn ? "APN WAITING" : "APN OFF");
+    setClass(apnChip, `pill ${state.status.apn.connected ? "success" : state.status.apn.useApn ? "warn" : "neutral"}`);
+  }
 }
 
 function renderStatusCard(gridId, entries) {
   const grid = $(gridId);
-  grid.innerHTML = "";
+  const labels = entries.map(([label]) => label);
+  const cached = statusCardCache.get(gridId);
+  const needsRebuild = !cached ||
+    cached.labels.length !== labels.length ||
+    cached.labels.some((label, index) => label !== labels[index]);
+
+  if (needsRebuild) {
+    grid.innerHTML = "";
+    const nodes = {};
+    entries.forEach(([label, value]) => {
+      const card = document.createElement("div");
+      card.className = "info-card";
+      const labelNode = document.createElement("span");
+      labelNode.textContent = label;
+      const valueNode = document.createElement("strong");
+      valueNode.textContent = formatValue(value);
+      card.appendChild(labelNode);
+      card.appendChild(valueNode);
+      grid.appendChild(card);
+      nodes[label] = valueNode;
+    });
+    statusCardCache.set(gridId, { labels, nodes });
+    return;
+  }
+
   entries.forEach(([label, value]) => {
-    const card = document.createElement("div");
-    card.className = "info-card";
-    card.innerHTML = `<span>${label}</span><strong>${formatValue(value)}</strong>`;
-    grid.appendChild(card);
+    const valueNode = cached.nodes[label];
+    if (valueNode) {
+      const next = formatValue(value);
+      if (valueNode.textContent !== next) {
+        valueNode.textContent = next;
+      }
+    }
   });
 }
 
@@ -305,6 +395,30 @@ function renderStatusPanels() {
     ["Driving Model", state.status.vehicle.drivingModel],
     ["Driving Model Version", state.status.vehicle.drivingModelVersion],
   ]);
+
+  renderStatusCard("apnInfoGrid", [
+    ["Use APN", state.status.apn.useApn],
+    ["연결 상태", state.status.apn.statusLabel],
+    ["브리지 실행", state.status.apn.bridgeEnabled],
+    ["Route Active", state.status.apn.routeActive],
+    ["브리지 메세지", state.status.apn.message || "-"],
+    ["기기 IP", state.status.apn.deviceIp],
+    ["수신 포트", state.status.apn.listenPort],
+    ["HTTP 포트", state.status.apn.httpPort],
+    ["HTTP 경로", state.status.apn.httpPath],
+    ["브로드캐스트 대상", (state.status.apn.broadcastTargets || []).join(", ") || "-"],
+    ["최근 패킷", state.status.apn.lastPacketKind],
+    ["수신 주소", state.status.apn.lastPacketFrom],
+    ["최근 수신", formatAgeLabel(state.status.apn.lastPacketAgeSec)],
+    ["도로명", state.status.apn.roadName],
+    ["제한속도", state.status.apn.roadLimitKph === "-" ? "-" : `${state.status.apn.roadLimitKph} km/h`],
+    ["SDI 타입", state.status.apn.sdiType],
+    ["SDI 구간", state.status.apn.sdiSection],
+    ["SDI 거리", state.status.apn.sdiDistanceM === "-" ? "-" : `${state.status.apn.sdiDistanceM} m`],
+  ]);
+
+  setText("apnDebugSubtitle", state.status.apn.lastPacketAt ? `마지막 수신 ${formatTimeLabel(state.status.apn.lastPacketAt)}` : "브리지 대기 중");
+  setExactText("apnDebugViewer", state.status.apn.debugJson || "{}");
 }
 
 function renderStats() {
@@ -601,6 +715,8 @@ async function refreshStatsOnly() {
 }
 
 async function refreshLiveStatusView() {
+  if (statusRefreshInFlight) return;
+  statusRefreshInFlight = true;
   try {
     await refreshStatusOnly();
     renderStatusHero();
@@ -608,10 +724,14 @@ async function refreshLiveStatusView() {
   } catch (error) {
     addLog("상태 갱신 실패", error.message);
     renderRecentChanges();
+  } finally {
+    statusRefreshInFlight = false;
   }
 }
 
 async function refreshMetaView() {
+  if (metaRefreshInFlight) return;
+  metaRefreshInFlight = true;
   try {
     await refreshMetaOnly();
     renderHero();
@@ -619,6 +739,8 @@ async function refreshMetaView() {
   } catch (error) {
     addLog("메타 갱신 실패", error.message);
     renderRecentChanges();
+  } finally {
+    metaRefreshInFlight = false;
   }
 }
 
@@ -739,41 +861,51 @@ function bindActions() {
 function startAutoRefresh() {
   if (!liveStatusTimer) {
     liveStatusTimer = window.setInterval(() => {
-      refreshLiveStatusView();
-    }, 1000);
+      if (state.activeTab === "status") {
+        refreshLiveStatusView();
+      }
+    }, 1500);
   }
 
   if (!metaRefreshTimer) {
     metaRefreshTimer = window.setInterval(() => {
       refreshMetaView();
-    }, 5000);
+    }, 15000);
   }
 
   if (!statsRefreshTimer) {
     statsRefreshTimer = window.setInterval(() => {
-      if (state.activeTab === "stats") {
+      if (state.activeTab === "stats" && !statsRefreshInFlight) {
+        statsRefreshInFlight = true;
         refreshStatsOnly().then(renderStats).catch((error) => {
           addLog("통계 갱신 실패", error.message);
           renderRecentChanges();
+        }).finally(() => {
+          statsRefreshInFlight = false;
         });
       }
-    }, 10000);
+    }, 15000);
   }
 
   if (!logsRefreshTimer) {
     logsRefreshTimer = window.setInterval(() => {
-      if (state.activeTab === "query") {
+      if (state.activeTab === "query" && !logsRefreshInFlight) {
+        logsRefreshInFlight = true;
         refreshLogsOnly().then(renderLogs).catch((error) => {
           addLog("로그 갱신 실패", error.message);
           renderRecentChanges();
+        }).finally(() => {
+          logsRefreshInFlight = false;
         });
       }
-    }, 2000);
+    }, 3000);
   }
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
-      refreshLiveStatusView();
+      if (state.activeTab === "status") {
+        refreshLiveStatusView();
+      }
       refreshMetaView();
       if (state.activeTab === "stats") {
         refreshStatsOnly().then(renderStats).catch(() => {});

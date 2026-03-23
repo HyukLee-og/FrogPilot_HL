@@ -50,6 +50,7 @@
                 <span id="statusOpenpilotChip" class="pill success">ENABLED</span>
                 <span id="statusOnroadChip" class="pill neutral">OFFROAD</span>
                 <span id="statusEngagedChip" class="pill neutral">DISENGAGED</span>
+                <span id="statusApnChip" class="pill neutral">APN OFF</span>
               </div>
             </div>
           </article>
@@ -107,6 +108,23 @@
             </div>
             <div id="vehicleInfoGrid" class="info-card-grid"></div>
           </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">CARROTNAVI</p>
+                <h3>CarrotNavi / APN 상태</h3>
+              </div>
+            </div>
+            <div id="apnInfoGrid" class="info-card-grid"></div>
+            <div class="timeline-card compact-json-card">
+              <div class="timeline-header">
+                <h4>APN 디버그</h4>
+                <span id="apnDebugSubtitle" class="panel-caption">최근 패킷 / 브리지 상태</span>
+              </div>
+              <pre id="apnDebugViewer" class="log-viewer log-viewer-compact"></pre>
+            </div>
+          </section>
         </section>
       </section>
 
@@ -159,6 +177,24 @@
               <div>
                 <span>FrogPilot 키</span>
                 <strong><span id="fakeValue">0</span><small>frog</small></strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="hero-card">
+            <div class="hero-label">CarrotNavi</div>
+            <div class="metric-stack">
+              <div class="metric-line">
+                <span>연결 상태</span>
+                <strong id="apnConnectionValue">OFF</strong>
+              </div>
+              <div class="metric-line">
+                <span>브리지</span>
+                <strong id="apnBridgeValue">IDLE</strong>
+              </div>
+              <div class="metric-line">
+                <span>최근 패킷</span>
+                <strong id="apnPacketValue">-</strong>
               </div>
             </div>
           </article>
