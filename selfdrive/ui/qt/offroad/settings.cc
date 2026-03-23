@@ -223,6 +223,17 @@ void TogglesPanel::updateToggles() {
   record_audio_toggle->setVisible(!frogpilot_toggles.value("no_logging").toBool());
 }
 
+MorePanel::MorePanel(SettingsWindow *parent) : ListWidget(parent) {
+  auto apn_toggle = new ParamControl(
+    "UseAPN",
+    tr("APN 사용"),
+    tr("APN/CarrotNavi 호환 브리지를 활성화합니다. 켜면 기기가 APN 앱에 실시간 상태를 브로드캐스트하고, APN 앱이 읽을 수 있는 설정/백업 파일을 만들며, APN에서 들어오는 데이터를 수신합니다."),
+    "../assets/icons/network.png",
+    this
+  );
+  addItem(apn_toggle);
+}
+
 DevicePanel::DevicePanel(SettingsWindow *parent) : ListWidget(parent) {
   setSpacing(50);
   addItem(new LabelControl(tr("Dongle ID"), getDongleId().value_or(tr("N/A"))));
@@ -538,6 +549,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QFrame(parent) {
     {tr("Software"), new SoftwarePanel(this)},
     {tr("Developer"), developerPanel},
     {tr("FrogPilot"), frogpilotSettingsWindow},
+    {tr("More"), new MorePanel(this)},
   };
 
   nav_btns = new QButtonGroup(this);

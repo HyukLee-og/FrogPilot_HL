@@ -1,8 +1,10 @@
 #include "selfdrive/ui/qt/onroad/hud.h"
 
+#include <QDateTime>
 #include <algorithm>
 #include <cmath>
 
+#include "common/util.h"
 #include "selfdrive/ui/qt/util.h"
 
 constexpr int SET_SPEED_NA = 255;
@@ -264,6 +266,31 @@ void HudRenderer::drawLfaIcon(QPainter &p, const QRect &surface_rect) {
   p.setRenderHint(QPainter::SmoothPixmapTransform);
   p.drawPixmap(icon_rect, tinted);
   p.restore();
+
+  Params params_memory{"", true};
+  bool show_apn_badge = false;
+  if (util::read_file(params_memory.getParamPath("APNDataActive")) == "1") {
+    const QString apn_timestamp_raw = QString::fromStdString(util::read_file(params_memory.getParamPath("APNDataTimestamp"))).trimmed();
+    const double apn_timestamp = apn_timestamp_raw.toDouble();
+    const double now_secs = QDateTime::currentMSecsSinceEpoch() / 1000.0;
+    show_apn_badge = apn_timestamp > 0.0 && (now_secs - apn_timestamp) < 10.0;
+  }
+  if (!show_apn_badge && util::getenv("OPENPILOT_PREFIX", "") == "routedemo") {
+    show_apn_badge = true;
+  }
+
+  if (show_apn_badge) {
+    const QRect badge_rect(icon_rect.center().x() - 44, icon_rect.top() - 34, 88, 30);
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(28, 176, 94, 236));
+    p.drawRoundedRect(badge_rect, 15, 15);
+    p.setPen(Qt::white);
+    p.setFont(InterFont(18, QFont::Bold));
+    p.drawText(badge_rect, Qt::AlignCenter, "APN");
+    p.restore();
+  }
 }
 
 void HudRenderer::drawSteeringWheelIcon(QPainter &p, const QRect &surface_rect) {

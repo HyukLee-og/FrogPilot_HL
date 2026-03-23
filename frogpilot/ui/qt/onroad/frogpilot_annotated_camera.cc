@@ -3,6 +3,8 @@
 #include <QDateTime>
 #include <QPainterPath>
 
+#include "common/util.h"
+
 FrogPilotAnnotatedCameraWidget::FrogPilotAnnotatedCameraWidget(QWidget *parent) : QWidget(parent) {
   animationTimer = new QTimer(this);
 
@@ -189,6 +191,40 @@ void FrogPilotAnnotatedCameraWidget::updateState(const UIState &s, const FrogPil
   redLight = frogpilotPlan.getRedLight();
   roadCurvature = frogpilotPlan.getRoadCurvature();
   roadName = QString::fromStdString(mapdOut.getRoadName());
+  showAPNCameraAlert = false;
+  apnCameraDistance = 0.0f;
+  apnCameraSpeed = 0.0f;
+  const std::string apn_active_raw = util::read_file(params_memory.getParamPath("APNDataActive"));
+  if (apn_active_raw == "1") {
+    const double apn_timestamp = QString::fromStdString(util::read_file(params_memory.getParamPath("APNDataTimestamp"))).toDouble();
+    const double now_secs = QDateTime::currentMSecsSinceEpoch() / 1000.0;
+    if (apn_timestamp > 0.0 && (now_secs - apn_timestamp) < 10.0) {
+      const QString apn_road_name = QString::fromStdString(util::read_file(params_memory.getParamPath("APNRoadName"))).trimmed();
+      if (!apn_road_name.isEmpty()) {
+        roadName = apn_road_name;
+      }
+
+      const QString apn_hazard = QString::fromStdString(util::read_file(params_memory.getParamPath("APNNextHazard"))).trimmed();
+      const float apn_hazard_distance = QString::fromStdString(util::read_file(params_memory.getParamPath("APNNextHazardDistance"))).toFloat();
+      float apn_hazard_speed = QString::fromStdString(util::read_file(params_memory.getParamPath("APNNextSpeedLimit"))).toFloat();
+      if (apn_hazard_speed <= 0.1f) {
+        apn_hazard_speed = QString::fromStdString(util::read_file(params_memory.getParamPath("APNSpeedLimit"))).toFloat();
+      }
+
+      if (apn_hazard.contains("camera", Qt::CaseInsensitive) && apn_hazard_distance > 0.0f && apn_hazard_distance <= 500.0f && apn_hazard_speed > 0.1f) {
+        showAPNCameraAlert = true;
+        apnCameraDistance = apn_hazard_distance;
+        apnCameraSpeed = apn_hazard_speed * speedConversion;
+      }
+    }
+  }
+  const bool apn_demo_preview = util::getenv("OPENPILOT_PREFIX", "") == "routedemo";
+  if (!showAPNCameraAlert && apn_demo_preview) {
+    roadName = QString::fromUtf8("영동고속도로");
+    showAPNCameraAlert = true;
+    apnCameraDistance = 246.0f;
+    apnCameraSpeed = (80.0f / 3.6f) * speedConversion;
+  }
   slcOverriddenSpeed = frogpilotPlan.getSlcOverriddenSpeed();
   speedLimit = slcOverriddenSpeed != 0 ? slcOverriddenSpeed : frogpilotPlan.getSlcSpeedLimit();
   speedLimitChanged = frogpilotPlan.getSpeedLimitChanged();
@@ -378,6 +414,10 @@ void FrogPilotAnnotatedCameraWidget::paintFrogPilotWidgets(QPainter &p, UIState 
 
   if (frogpilot_toggles.value("road_name_ui").toBool()) {
     paintRoadName(p);
+  }
+
+  if (showAPNCameraAlert) {
+    paintAPNCameraAlert(p);
   }
 
   if (standstillDuration != 0) {
@@ -1018,6 +1058,43 @@ void FrogPilotAnnotatedCameraWidget::paintRoadName(QPainter &p) {
   p.setFont(font);
   p.setPen(QPen(whiteColor(), 6));
   p.drawText(roadNameRect, Qt::AlignCenter, roadName);
+
+  p.restore();
+}
+
+void FrogPilotAnnotatedCameraWidget::paintAPNCameraAlert(QPainter &p) {
+  if (!showAPNCameraAlert) {
+    return;
+  }
+
+  p.save();
+  p.setRenderHint(QPainter::Antialiasing);
+
+  const int card_width = 320;
+  const int card_height = 220;
+  const int card_top = rect().center().y() - 250;
+  QRect card(rect().center().x() - (card_width / 2), card_top, card_width, card_height);
+
+  p.setOpacity(1.0);
+  p.setBrush(blackColor(190));
+  p.setPen(QPen(redColor(220), 10));
+  p.drawRoundedRect(card, 28, 28);
+
+  p.setPen(QPen(whiteColor(), 4));
+  p.setFont(InterFont(30, QFont::DemiBold));
+  p.drawText(card.adjusted(0, 18, 0, 0), Qt::AlignTop | Qt::AlignHCenter, tr("SPEED CAMERA"));
+
+  const QString speed_text = QString::number(std::nearbyint(apnCameraSpeed));
+  const QString distance_text = QString("%1m").arg(std::nearbyint(apnCameraDistance));
+
+  p.setFont(InterFont(speed_text.size() >= 3 ? 96 : 112, QFont::Bold));
+  p.drawText(card.adjusted(0, 18, 0, -30), Qt::AlignCenter, speed_text);
+
+  p.setFont(InterFont(34, QFont::DemiBold));
+  p.drawText(card.adjusted(0, 132, 0, 0), Qt::AlignTop | Qt::AlignHCenter, speedUnit);
+
+  p.setFont(InterFont(46, QFont::Bold));
+  p.drawText(card.adjusted(0, 0, 0, 22), Qt::AlignBottom | Qt::AlignHCenter, distance_text);
 
   p.restore();
 }

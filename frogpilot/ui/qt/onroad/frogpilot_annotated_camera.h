@@ -67,6 +67,7 @@ private:
   void paintCompass(QPainter &p);
   void paintCurveSpeedControl(QPainter &p);
   void paintCurveSpeedControlTraining(QPainter &p);
+  void paintAPNCameraAlert(QPainter &p);
   void paintBlindspotIcons(QPainter &p);
   void paintFakeLongTestUI(QPainter &p);
   void paintLateralPaused(QPainter &p);
@@ -101,6 +102,7 @@ private:
   bool weatherDaytime;
   bool fakeLongArmed;
   bool fakeLongPaused;
+  bool showAPNCameraAlert;
 
   int animationFrameIndex;
   int desiredFollowDistance;
@@ -122,6 +124,8 @@ private:
   float mapboxSpeedLimit;
   float nextSpeedLimit;
   float roadCurvature;
+  float apnCameraDistance;
+  float apnCameraSpeed;
   float fakeLongApplySpeed;
   float fakeLongCurrentSpeed;
   float fakeLongTargetSpeed;

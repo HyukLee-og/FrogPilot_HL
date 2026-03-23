@@ -1,4 +1,5 @@
 Import('env', 'envCython', 'arch', 'common')
+import os
 
 
 visionipc_dir = Dir('msgq/visionipc')
@@ -21,7 +22,9 @@ msgq_python = envCython.Program('msgq/ipc_pyx.so', 'msgq/ipc_pyx.pyx', LIBS=envC
 vipc_files = ['visionipc.cc', 'visionipc_server.cc', 'visionipc_client.cc', 'visionbuf.cc']
 vipc_sources = [f'{visionipc_dir.abspath}/{f}' for f in vipc_files]
 
-if arch == "larch64":
+use_ion_visionbuf = arch == "larch64" and os.path.exists("/TICI")
+
+if use_ion_visionbuf:
   vipc_sources += [f'{visionipc_dir.abspath}/visionbuf_ion.cc']
 else:
   vipc_sources += [f'{visionipc_dir.abspath}/visionbuf_cl.cc']

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # PFEIFER - SLC - Modified by FrogAi for FrogPilot
 import calendar
+import time
 import numpy as np
 import requests
 
@@ -41,6 +42,10 @@ class SpeedLimitController:
     self.override_slc = False
 
     self.denied_target = 0
+    self.apn_active = False
+    self.apn_speed_limit = 0
+    self.apn_next_speed_limit = 0
+    self.apn_next_speed_limit_distance = 0
     self.map_speed_limit = 0
     self.mapbox_limit = 0
     self.next_speed_limit = 0
@@ -71,6 +76,41 @@ class SpeedLimitController:
   @property
   def experimental_mode(self):
     return self.target == 0 and self.frogpilot_toggles.slc_fallback_experimental_mode
+
+  def _memory_text(self, key):
+    value = self.frogpilot_planner.params_memory.get(key)
+    if value is None:
+      return ""
+    if isinstance(value, bytes):
+      return value.decode("utf-8", errors="ignore")
+    return str(value)
+
+  def _memory_float(self, key, default=0.0):
+    try:
+      return float(self._memory_text(key) or default)
+    except ValueError:
+      return default
+
+  def update_apn_speed_limit(self):
+    self.apn_active = False
+    self.apn_speed_limit = 0
+    self.apn_next_speed_limit = 0
+    self.apn_next_speed_limit_distance = 0
+
+    if not self.frogpilot_planner.params.get_bool("UseAPN"):
+      return
+
+    if not self.frogpilot_planner.params_memory.get_bool("APNDataActive"):
+      return
+
+    timestamp = self._memory_float("APNDataTimestamp")
+    if timestamp <= 0 or (time.time() - timestamp) > 10:
+      return
+
+    self.apn_active = True
+    self.apn_speed_limit = self._memory_float("APNSpeedLimit")
+    self.apn_next_speed_limit = self._memory_float("APNNextSpeedLimit")
+    self.apn_next_speed_limit_distance = self._memory_float("APNNextSpeedLimitDistance")
 
   @property
   def offset(self):
@@ -303,8 +343,16 @@ class SpeedLimitController:
       self.unconfirmed_speed_limit = 0
 
   def update_map_speed_limit(self, v_ego, sm):
+    self.update_apn_speed_limit()
+
     self.map_speed_limit = sm["mapdOut"].speedLimit
     self.next_speed_limit = sm["mapdOut"].nextSpeedLimit
+    next_speed_limit_distance = sm["mapdOut"].nextSpeedLimitDistance
+
+    if self.apn_active and self.apn_speed_limit > 0:
+      self.map_speed_limit = self.apn_speed_limit
+      self.next_speed_limit = self.apn_next_speed_limit
+      next_speed_limit_distance = self.apn_next_speed_limit_distance
 
     if self.next_speed_limit > 0:
       if self.map_speed_limit < self.next_speed_limit:
@@ -314,7 +362,7 @@ class SpeedLimitController:
       else:
         max_lookahead = 0
 
-      if sm["mapdOut"].nextSpeedLimitDistance < max_lookahead:
+      if next_speed_limit_distance < max_lookahead:
         self.map_speed_limit = self.next_speed_limit
 
   def update_override(self, v_cruise, v_cruise_diff, v_ego, v_ego_diff, sm):

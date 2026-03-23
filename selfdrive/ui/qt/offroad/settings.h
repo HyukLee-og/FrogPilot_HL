@@ -127,5 +127,11 @@ private:
   ParamWatcher *fs_watch;
 };
 
+class MorePanel : public ListWidget {
+  Q_OBJECT
+public:
+  explicit MorePanel(SettingsWindow *parent);
+};
+
 // Forward declaration
 class FirehosePanel;
