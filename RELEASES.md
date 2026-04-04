@@ -1,232 +1,232 @@
-Patch Update (2026-04-05, APN dashboard/debug, alert cleanup, parked overlay)
-=============================================================================
-* GM / APN / fake-long tooling
-  * Added a dedicated `디버그` tab to the device dashboard for GM stock-ACC button-path validation
-  * Simplified the GM synthetic test path back to a `camera-only` route for comparison against the real wheel-button path
-  * Restored legacy onroad/web fake-long test payload compatibility while keeping the newer dashboard-driven debug flow
-  * Added GM cluster/current-speed correction helpers so displayed ACC set speed and current speed can follow calibrated cluster values instead of raw values
-  * Reclassified APN SDI types using the authoritative `nSdiType` mapping and refreshed special camera / protection-zone rendering around that mapping
-* Device web dashboard
-  * Renamed the dashboard header to `Openpilot Console`
-  * Reduced default onroad dashboard load by switching status to a lighter default summary and hiding heavier detail sections behind `더보기`
-  * Moved CAN-heavy and debug-heavy views behind explicit controls so they do not auto-poll by default while driving
-  * Added manual debug refresh plus an opt-in live mode for the debug tab instead of unconditional high-frequency polling
-  * Redesigned the mobile stats/dashboard presentation to show more useful information per screen while removing duplicated counters and low-value sections
-* Alerts / HUD / settings
-  * Added a new `안전벨트 착용 여부 미확인` toggle under `More`, allowing seatbelt no-entry suppression when explicitly enabled
-  * Added a seatbelt icon to the top-left of the current-speed HUD area while the belt is unlatched
-  * Changed alert precedence so `resumeRequired` suppresses driver distraction/unresponsive alerts and `belowSteerSpeed` while auto hold is active
-  * Added a parked standstill onroad overlay for `P + standstill`, using a dimmed full-screen presentation with `parking.png`, `정차중`, and an elapsed timer
-* Auto brightness
-  * Lowered the `true dark` threshold again so ordinary dim scenes stay brighter, and sub-floor dimming happens only in darker conditions
-* Packaging / deployment
-  * Fixed the UTM device-ABI UI build path after identifying an out-of-date UTM workspace / stale build-state issue
-  * Refreshed the checked-in device-side runtime artifacts:
+패치 업데이트 (2026-04-05, APN 대시보드/디버그, 알럿 정리, 정차 오버레이)
+===========================================================================
+* GM / APN / fake-long 도구
+  * GM 순정 ACC 버튼 경로 검증용 전용 `디버그` 탭을 기기 대시보드에 추가
+  * 실제 핸들 버튼 경로와 비교할 수 있도록 GM synthetic 테스트 경로를 다시 `camera-only` 방식으로 단순화
+  * 최신 대시보드 기반 디버그 흐름은 유지하면서, 예전 onroad/web fake-long 테스트 payload 호환성도 복구
+  * 표시되는 ACC 설정속도와 현재 속도가 raw 값이 아니라 보정된 계기판 값 기준을 따르도록 GM cluster/current-speed 보정 헬퍼 추가
+  * 공인된 `nSdiType` 매핑 기준으로 APN SDI 타입을 다시 분류하고, 그 기준에 맞춰 특수 카메라 / 보호구역 렌더링 정비
+* 기기 웹 대시보드
+  * 대시보드 헤더를 `Openpilot Console`로 변경
+  * 상태 탭 기본 화면을 더 가벼운 요약 중심으로 바꾸고, 무거운 상세 영역은 `더보기` 뒤로 이동해 기본 onroad 부하 감소
+  * CAN 및 디버그처럼 무거운 화면은 명시적으로 켜야만 동작하도록 바꿔, 주행 중 기본 자동 polling 제거
+  * 디버그 탭은 고주기 자동 polling 대신 수동 새로고침과 선택형 실시간 모드만 사용하도록 변경
+  * 모바일 통계/대시보드 화면은 중복 카운터와 가치 낮은 섹션을 줄이고, 화면당 실효 정보량이 더 높게 보이도록 재구성
+* 알럿 / HUD / 설정
+  * `More` 아래에 `안전벨트 착용 여부 미확인` 토글 추가. 명시적으로 켠 경우에만 안전벨트 no-entry를 무시하도록 구성
+  * 안전벨트 미착용 시 현재 속도 HUD 좌상단에 안전벨트 아이콘 추가
+  * auto hold 활성 중에는 `resumeRequired`가 운전자 부주의/무반응 및 `belowSteerSpeed`보다 우선되도록 알럿 우선순위 조정
+  * `P + 정차` 상태에서는 `parking.png`, `정차중`, 경과 타이머를 포함하는 전체 화면 dim 방식의 parked standstill onroad 오버레이 추가
+* 자동 밝기
+  * 일반적인 어두운 장면은 너무 빨리 어두워지지 않도록 `진짜 어둠` 기준을 다시 낮춰, 더 어두운 환경에서만 하한선 아래로 떨어지게 조정
+* 패키징 / 배포
+  * 오래된 UTM 워크스페이스와 stale build state 문제를 찾아내고, UTM device-ABI UI 빌드 경로를 복구
+  * 체크인된 기기 런타임 산출물 갱신:
     * `common/params_pyx.so`
     * `selfdrive/ui/ui`
 
-Patch Update (2026-03-22, power logic toggle restore)
-=====================================================
-* Device power management
-  * Restored the original FrogPilot automatic power-down logic so `Device Shutdown Timer` and `Low-Voltage Cutoff` work again by default
-  * Added a new `강제 전원 로직 비활성화` toggle under `FrogPilot Settings > Device Settings`
-    * default `OFF`
-    * `OFF`: original FrogPilot shutdown timer / low-voltage behavior is active
-    * `ON`: automatic power-down logic is fully bypassed, matching the previous `never shut down automatically` test behavior
-* Packaging
-  * Refreshed the checked-in device-side runtime artifacts required by the new power-logic toggle:
+패치 업데이트 (2026-03-22, 전원 로직 토글 복구)
+==================================================
+* 기기 전원 관리
+  * 기본 상태에서 `Device Shutdown Timer`와 `Low-Voltage Cutoff`가 다시 동작하도록, 기존 FrogPilot 자동 전원 차단 로직 복구
+  * `FrogPilot Settings > Device Settings` 아래에 `강제 전원 로직 비활성화` 토글 추가
+    * 기본값 `OFF`
+    * `OFF`: 기존 FrogPilot 종료 타이머 / 저전압 동작 활성
+    * `ON`: 자동 전원 차단 로직 완전 우회, 이전의 `자동 종료 안 함` 테스트 동작과 동일
+* 패키징
+  * 새 전원 로직 토글에 필요한 기기 런타임 산출물 갱신:
     * `common/params_pyx.so`
     * `selfdrive/ui/ui`
 
-Patch Update (2026-03-22, fake-long tooling and device dashboard)
-=================================================================
-* Stock ACC / fake-long tooling
-  * Added `Fake-Long` and `Fake-Long Test UI` toggles under `FrogPilot Settings > Vehicle Settings > Long`
-  * Added a GM stock-ACC button-emulation safety path dedicated to fake-long testing so stock ACC button automation no longer relies on the broader CC_LONG mode that was faulting the stock ACC path
-  * Added the onroad fake-long debug overlay with:
-    * `FAKE / ACC` cards
-    * `ARMED / PAUSED / TARGET / LAST` state chips
-    * `MAIN / CANCEL / RES / SET` validation buttons for the test UI
-  * Added fake-long runtime guards and debug reporting for:
+패치 업데이트 (2026-03-22, fake-long 도구와 기기 대시보드)
+=============================================================
+* 순정 ACC / fake-long 도구
+  * `FrogPilot Settings > Vehicle Settings > Long` 아래에 `Fake-Long`, `Fake-Long Test UI` 토글 추가
+  * fake-long 테스트 전용 GM 순정 ACC 버튼 에뮬레이션 safety 경로 추가. 기존처럼 broader `CC_LONG` 모드에 의존하지 않도록 변경
+  * onroad fake-long 디버그 오버레이 추가:
+    * `FAKE / ACC` 카드
+    * `ARMED / PAUSED / TARGET / LAST` 상태 칩
+    * 테스트 UI용 `MAIN / CANCEL / RES / SET` 검증 버튼
+  * fake-long 런타임 가드 및 디버그 리포트 추가:
     * `FakeLongDebug`
     * `FakeLongTestButton`
-    * no automatic button sends below `10 km/h`
-    * preserving the user ACC target across disengage/re-engage while keeping the fake target separate
-  * Kept fake-long explicitly in an experimental tuning state for GM stock ACC validation rather than marking it as finalized longitudinal replacement behavior
-* Drive summary / stats
-  * Fixed recent-drive engagement percentage so lateral-only usage on stock-ACC cars no longer reports `0%` just because `LongitudinalTime` stayed near zero
-  * Added a new web dashboard stats tab that renders `FrogPilotStats` in Korean categories instead of raw key dumps
-* Device web dashboard
-  * Added a new device dashboard at `http://<device-ip>:8123`
-  * Implemented four tabs:
+    * `10 km/h` 이하에서는 자동 버튼 전송 금지
+    * disengage/re-engage 사이에서도 사용자 ACC 목표값은 유지하고, fake target은 별도로 보존
+  * fake-long은 완성형 longitudinal 대체 기능이 아니라, GM 순정 ACC 검증용 실험 상태로 유지
+* 주행 요약 / 통계
+  * stock-ACC 차량에서 lateral-only 사용 시 `LongitudinalTime`이 거의 0이어도 최근 주행 engagement 비율이 `0%`로 잘못 나오지 않도록 수정
+  * raw key dump 대신 `FrogPilotStats`를 한국어 카테고리로 렌더링하는 웹 대시보드 통계 탭 추가
+* 기기 웹 대시보드
+  * `http://<device-ip>:8123`에 새 기기 대시보드 추가
+  * 네 개의 탭 구현:
     * `상태`
     * `설정`
     * `통계`
     * `조회`
-  * Connected the dashboard to real device/runtime data:
+  * 대시보드를 실제 기기/런타임 데이터와 연결:
     * live `deviceState`, `carState`, `selfdriveState`, `pandaStates`, `peripheralState`
-    * real Params read/write
-    * tmux / comma.service / dashboard / system journal log views
-  * Added mobile-specific layout tightening for status/settings/stats/log tabs so the dashboard remains usable from a phone without excessive empty space or horizontal overflow
-  * Hooked the dashboard launch into `launch_chffrplus.sh` so it comes back automatically after device boot / branch restart without a manual SSH launch step
-* Boot / loading visuals
-  * Replaced the FrogPilot boot background asset with the stock background so `/usr/comma/bg.jpg` updates now stay stock-looking even when FrogPilot re-applies the boot image on startup
-  * Updated the spinner image pair:
+    * 실제 Params 읽기/쓰기
+    * tmux / comma.service / dashboard / system journal 로그 조회
+  * 휴대폰에서도 과도한 빈 공간이나 가로 넘침 없이 쓸 수 있도록 status/settings/stats/log 탭 모바일 레이아웃 압축
+  * `launch_chffrplus.sh`에 대시보드 실행을 연결해, 부팅/브랜치 재시작 후에도 SSH 없이 자동 재기동되도록 구성
+* 부팅 / 로딩 시각 요소
+  * FrogPilot 부트 배경을 다시 stock 배경으로 교체해, `/usr/comma/bg.jpg`가 업데이트돼도 stock 느낌 유지
+  * 스피너 이미지 쌍 갱신:
     * `spinner_comma.png`
     * `spinner_track.png`
-* Packaging
-  * Refreshed the checked-in device-side runtime artifacts required by these settings/UI changes:
+* 패키징
+  * 위 설정/UI 변경에 필요한 기기 런타임 산출물 갱신:
     * `common/params_pyx.so`
     * `selfdrive/ui/ui`
 
-Patch Update (2026-03-19, driving model runtime execution verified)
-==================================================================
-* Driving model runtime compatibility
-  * Extended tinygrad compatibility so older FrogPilot precompiled driving-model pickles now execute on the current runtime instead of only loading part-way and then crashing on-device
-  * Relaxed TinyJit input signature matching to accept legacy serialized shape descriptors when the effective tensor shapes still match
-  * Added legacy `BUFFER_VIEW` handling in tinygrad schedule/spec/uop shape logic so old precompiled graphs can execute without crashing on modern `BUFFER_VIEW` semantics
-  * Rewrote legacy serialized output `BUFFER_VIEW` nodes after unpickling so downloaded model outputs no longer fail at runtime on the current tinygrad graph format
-* Device-side validation
-  * Verified on comma `192.168.0.11` that both `steam-powered` and `sc-driving` precompiled models execute end-to-end on QCOM using direct vision/policy inference tests
-  * Benchmarked both downloaded models against the device runtime and confirmed warm-run timings stay in the same class as the built-in default model instead of the earlier heavy local-compile path
-  * Forced real onroad process startup on-device and verified:
-    * `steam-powered` no longer crashes `modeld`
-    * `sc-driving` also starts without `Traceback`, `AssertionError`, `skipping model eval`, or `Dropped` model logs
-  * Confirmed the remaining `annotated_camera.cc: slow frame rate` messages reproduce with `steam-powered` too, so that symptom is not specific to `sc-driving`
-* ForceOnroad runtime handling
-  * Updated manager, FrogPilot background process, and hardwared handling so `ForceOnroad` / `ForceOffroad` changes can take effect on a live device session without relying on stale startup-only toggle snapshots
-* Current device state
-  * Left comma `192.168.0.11` in a safe offroad state with `DrivingModel=sc-driving`
+패치 업데이트 (2026-03-19, 주행 모델 런타임 실행 검증)
+===========================================================
+* 주행 모델 런타임 호환성
+  * 오래된 FrogPilot 사전컴파일 driving-model pickle이 현재 런타임에서 부분 로드 후 크래시나는 대신 끝까지 실행되도록 tinygrad 호환성 확장
+  * 실효 tensor shape가 같다면, legacy serialized shape descriptor도 TinyJit 입력 signature matching에서 허용
+  * 오래된 사전컴파일 그래프가 최신 `BUFFER_VIEW` semantics에서 죽지 않도록 tinygrad schedule/spec/uop shape 로직에 legacy `BUFFER_VIEW` 처리 추가
+  * unpickle 이후 legacy serialized output `BUFFER_VIEW` 노드를 재작성해, 다운로드한 모델 출력이 현재 tinygrad 그래프 포맷에서 런타임 실패하지 않도록 조정
+* 기기 검증
+  * comma `192.168.0.11`에서 `steam-powered`, `sc-driving` 두 사전컴파일 모델이 모두 QCOM에서 vision/policy 직접 추론 테스트를 끝까지 통과하는 것 확인
+  * 다운로드된 두 모델을 기기 런타임에서 벤치마크해, warm-run 속도가 예전의 무거운 로컬 컴파일 경로가 아니라 기본 내장 모델과 비슷한 급으로 유지되는 것 확인
+  * 기기에서 실제 onroad 프로세스를 강제로 띄워 다음 항목 확인:
+    * `steam-powered`가 더 이상 `modeld`를 죽이지 않음
+    * `sc-driving`도 `Traceback`, `AssertionError`, `skipping model eval`, `Dropped` 로그 없이 정상 시작
+  * 남아 있는 `annotated_camera.cc: slow frame rate` 메시지는 `steam-powered`에서도 재현되므로, 이 증상은 `sc-driving` 특이 문제가 아님을 확인
+* ForceOnroad 런타임 처리
+  * stale startup-only toggle snapshot에 의존하지 않고, 실기 세션 중 `ForceOnroad` / `ForceOffroad` 변경이 반영되도록 manager, FrogPilot background process, hardwared 처리 갱신
+* 당시 기기 상태
+  * comma `192.168.0.11`을 `DrivingModel=sc-driving` 상태의 안전한 offroad로 유지
   * `ForceOnroad=0`, `ForceOffroad=0`, `IsOnroad=0`
 
-Patch Update (2026-03-19, precompiled driving model runtime compatibility)
-=========================================================================
-* Driving model runtime compatibility
-  * Added tinygrad compatibility shims so older FrogPilot precompiled driving-model artifacts can be unpickled on the current runtime again
-  * Restored the legacy module paths expected by the downloaded artifacts:
+패치 업데이트 (2026-03-19, 사전컴파일 주행 모델 런타임 호환성)
+==================================================================
+* 주행 모델 런타임 호환성
+  * 오래된 FrogPilot 사전컴파일 주행 모델 아티팩트를 현재 런타임에서 다시 unpickle할 수 있도록 tinygrad 호환 shim 추가
+  * 다운로드 아티팩트가 기대하는 legacy 모듈 경로 복원:
     * `tinygrad.shape.shapetracker`
     * `tinygrad.shape.view`
     * `tinygrad.codegen.opt.kernel`
-  * Added runtime compatibility aliases for legacy tinygrad enum names used by the precompiled model pickles:
+  * 사전컴파일 모델 pickle이 사용하는 legacy tinygrad enum 이름에 대한 런타임 alias 추가:
     * `Ops.VIEW -> Ops.BUFFER_VIEW`
     * `Ops.RECIP -> Ops.RECIPROCAL`
     * `Ops.ENDRANGE -> Ops.END`
-  * Hardened `ProgramSpec.estimates` for older serialized uop/program layouts so precompiled model loading no longer aborts on estimate reconstruction
-* Driving model downloads
-  * Updated the FrogPilot compiled-artifact validator to use the same tinygrad compatibility layer before deciding whether a downloaded precompiled model is usable
-  * Re-downloaded `steam-powered` on comma after restarting `comma.service`
-  * Verified the final downloaded artifact sizes stay on the lightweight precompiled path instead of falling back to the heavy local-compile output:
+  * 오래된 serialized uop/program 레이아웃에서도 estimate 재구성 중 로딩이 중단되지 않도록 `ProgramSpec.estimates` 보강
+* 주행 모델 다운로드
+  * 다운로드된 사전컴파일 모델의 사용 가능 여부를 판단하기 전에, FrogPilot compiled-artifact validator도 동일한 tinygrad 호환 레이어를 사용하도록 변경
+  * `comma.service` 재시작 후 comma에서 `steam-powered` 재다운로드
+  * 최종 다운로드 아티팩트 크기가 무거운 로컬 컴파일 결과가 아니라 가벼운 사전컴파일 경로를 유지하는 것 확인:
     * policy `~13M`
     * vision `~57M`
-* Device validation
-  * Verified on comma with `/usr/local/venv/bin/python` that `selfdrive/modeld/modeld.py` now resolves `DrivingModel=steam-powered` to `/data/models/steam-powered_*`
-  * Verified `load_driving_model_bundle(...)` succeeds against the downloaded override set without falling back to the built-in default model
+* 기기 검증
+  * comma에서 `/usr/local/venv/bin/python`으로 `selfdrive/modeld/modeld.py`가 `DrivingModel=steam-powered`를 `/data/models/steam-powered_*`로 정상 해석하는 것 확인
+  * `load_driving_model_bundle(...)`가 내장 기본 모델로 fallback하지 않고, 다운로드 override 세트를 정상 로드하는 것 확인
 
-Patch Update (2026-03-19, driving model download artifact fix)
-==============================================================
-* Driving model downloads
-  * Changed FrogPilot model downloads to prefer the precompiled `Models/compiled` tinygrad artifacts instead of always downloading ONNX from `Models/uncompiled` and recompiling locally on-device
-  * Kept the old ONNX local-compile path only as a fallback when compiled artifacts are unavailable remotely
-  * Re-downloaded `steam-powered` on comma using the new path and verified the resulting artifacts shrank from the previous heavy local-compile output to the expected precompiled size class (`~13M` policy / `~57M` vision)
-* Investigation notes
-  * Confirmed the earlier frame-drop regression was not just the `sc-driving` model name, but that the locally recompiled download path was producing much larger artifacts than the precompiled resource set used in sunnypilot-style flows
-  * Restarted `comma.service` offroad after replacing the downloaded `steam-powered` files so the next onroad session will load the corrected artifact set
+패치 업데이트 (2026-03-19, 주행 모델 다운로드 아티팩트 수정)
+=============================================================
+* 주행 모델 다운로드
+  * FrogPilot 모델 다운로드가 이제 `Models/uncompiled` ONNX를 항상 받아 기기에서 다시 컴파일하는 대신, 우선 `Models/compiled`의 사전컴파일 tinygrad 아티팩트를 사용하도록 변경
+  * 원격에 사전컴파일 결과가 없을 때만, 기존 ONNX 로컬 컴파일 경로를 fallback으로 유지
+  * 새 경로로 comma에서 `steam-powered`를 다시 내려받고, 결과물이 이전의 무거운 로컬 컴파일 산출물 대신 예상한 사전컴파일 크기(`~13M` policy / `~57M` vision)로 줄어든 것 확인
+* 조사 메모
+  * 예전 frame-drop 회귀는 단순히 `sc-driving` 모델 이름 문제가 아니라, 로컬 재컴파일 다운로드 경로가 sunnypilot류 흐름의 사전컴파일 리소스보다 훨씬 큰 산출물을 만들고 있었던 것이 원인임을 확인
+  * 다운로드된 `steam-powered` 파일 교체 후, 다음 onroad 세션에서 수정된 아티팩트가 로드되도록 offroad에서 `comma.service` 재시작
 
-Patch Update (2026-03-19, FCW sensitivity follow-up)
+패치 업데이트 (2026-03-19, FCW 민감도 후속 조정)
+=================================================
+* FCW 동작
+  * 운전자가 이미 브레이크를 밟고 있어도 전방 충돌 경고가 막히지 않도록, `model_fcw`에 남아 있던 브레이크 페달 suppress 로직 제거
+  * 기존 TTC / closing-speed / distance 기반 FCW 로직은 유지하면서, 최근 튜닝 이후 실제 주행에서의 FCW 트리거 일관성을 개선
+* 문서화
+  * 이 FCW 후속 조정을 `RELEASES.md`와 `HISTORY.md`에 모두 기록
+
+패치 업데이트 (2026-03-19, 오프로드 인사 문구 정리)
 ====================================================
-* FCW behavior
-  * Removed the remaining brake-pedal suppression from `model_fcw` so forward-collision alerts are no longer blocked just because the driver has already started braking
-  * Kept the existing TTC / closing-speed / distance-based FCW logic intact while making real-world FCW triggers more consistent with the recent tuning commits
-* Documentation
-  * Recorded this FCW follow-up adjustment in both `RELEASES.md` and `HISTORY.md`
-
-Patch Update (2026-03-19, offroad greeting cleanup)
-===================================================
 * Offroad UI
-  * Simplified the default offroad greeting title from `안녕하세요 종혁님` to `안녕하세요`
-* Packaging
-  * Rebuilt and checked in the updated device UI binary for the greeting text change
+  * 기본 오프로드 인사 제목을 `안녕하세요 종혁님`에서 `안녕하세요`로 단순화
+* 패키징
+  * 이 텍스트 변경에 맞춰 기기 UI 바이너리 재빌드 및 체크인
 
-Patch Update (2026-03-19, driving model download and brightness tuning)
-======================================================================
-* Driving model management
-  * Re-enabled the hidden `DRIVING MODEL` button in FrogPilot offroad settings so model management is reachable from the device UI again
-  * Fixed the FrogPilot driving-model download worker path so `DownloadAllModels`, `ModelToDownload`, and `UpdateTinygrad` requests are actually consumed offroad instead of getting stuck at `Downloading...`
-  * Reworked model compilation/download flow to use the current `selfdrive/modeld/get_model_metadata.py` path, write compiled outputs directly into `/data/models`, and filter downloads to models that are actually hosted remotely
-  * Connected `selfdrive/modeld/modeld.py` to load downloaded `/data/models/<model>_*` driving vision/policy artifacts when a non-default driving model is selected
-  * Verified a fresh single-model download/compile of `steam-powered` on comma and produced the full policy/vision tinygrad + metadata set under `/data/models`
-* Auto brightness
-  * Finalized the latest brightness floor tuning so non-dark scenes no longer dim below `10`
-  * Tightened the `truly dark` threshold to `4`, making sub-10 brightness possible only in much darker conditions than before
-* Packaging
-  * Rebuilt and deployed the current device UI binary after the brightness retune and driving-model UI changes
+패치 업데이트 (2026-03-19, 주행 모델 다운로드와 밝기 조정)
+===========================================================
+* 주행 모델 관리
+  * FrogPilot offroad 설정에서 숨겨져 있던 `DRIVING MODEL` 버튼을 다시 활성화해, 기기 UI에서 모델 관리가 가능하도록 복구
+  * `DownloadAllModels`, `ModelToDownload`, `UpdateTinygrad` 요청이 `Downloading...`에 멈추지 않고 실제로 offroad에서 소비되도록 FrogPilot 주행 모델 다운로드 worker 경로 수정
+  * 모델 컴파일/다운로드 흐름을 현재 `selfdrive/modeld/get_model_metadata.py` 경로에 맞게 재구성하고, 컴파일 결과는 직접 `/data/models`에 쓰며, 실제로 원격에 존재하는 모델만 다운로드 대상으로 필터링
+  * `selfdrive/modeld/modeld.py`가 non-default 주행 모델 선택 시 `/data/models/<model>_*` vision/policy 아티팩트를 로드하도록 연결
+  * comma에서 `steam-powered` 단일 모델 다운로드/컴파일을 새로 검증하고, `/data/models` 아래에 policy/vision tinygrad와 metadata 전체 세트가 생성되는 것 확인
+* 자동 밝기
+  * 일반적인 어두운 장면에서는 밝기가 `10` 아래로 내려가지 않도록 최신 밝기 하한 조정 마무리
+  * `진짜 어두움` 기준을 `4`로 더 낮춰, 이전보다 훨씬 어두운 상황에서만 10 미만 밝기가 가능하도록 조정
+* 패키징
+  * 밝기 재조정과 주행 모델 UI 변경을 반영해 최신 기기 UI 바이너리 재빌드 및 배포
 
-Patch Update (2026-03-18, auto-brightness and alert priority)
-==============================================================
-* Onroad alert behavior
-  * Allowed `greenLight` and `leadDeparting` FrogPilot alerts to visually override `resumeRequired` so stop-and-go prompts still surface while auto hold is active
-  * Kept the `resumeRequired` auto-hold layout work and updated its interaction with the standstill timer so current speed `0` is shown instead of the timer while `resumeRequired` is active
-* Standstill timer
-  * Reformatted the lower onroad standstill timer from the previous hour/minute style to `분:초` display
-  * Disabled the standstill timer during `resumeRequired` so the stop-state speed presentation remains clean
-* Auto brightness
-  * Added a new automatic brightness floor so normal low-light scenes no longer dim below `8`, while truly dark conditions can still drop under that threshold
-* Packaging
-  * Rebuilt and deployed the updated device UI binary from UTM
-  * Current checked-in device UI hash: `52fba2410153a3bd4ef6dc216ee9a6652e8f7278`
+패치 업데이트 (2026-03-18, 자동 밝기와 알럿 우선순위)
+======================================================
+* Onroad 알럿 동작
+  * auto hold 활성 중에도 stop-and-go 프롬프트가 보이도록, `greenLight`와 `leadDeparting` FrogPilot 알럿이 시각적으로 `resumeRequired`를 덮을 수 있게 조정
+  * `resumeRequired` auto-hold 레이아웃은 유지하면서, `resumeRequired` 활성 중에는 standstill timer 대신 현재 속도 `0`이 보이도록 상호작용 정리
+* 정차 타이머
+  * 하단 onroad 정차 타이머 표기를 기존 시/분 형식에서 `분:초`로 변경
+  * `resumeRequired` 중에는 정차 상태 표현이 깔끔하게 유지되도록 standstill timer 비활성화
+* 자동 밝기
+  * 일반적인 저조도 장면에서는 `8` 아래로 떨어지지 않도록 자동 밝기 하한 추가, 진짜 어두운 상황만 예외 허용
+* 패키징
+  * UTM에서 업데이트된 기기 UI 바이너리 재빌드 및 배포
+  * 현재 체크인된 기기 UI 해시: `52fba2410153a3bd4ef6dc216ee9a6652e8f7278`
 
-Hotfix Update (2026-03-18)
-==========================
-* Runtime stability
-  * Debounced transient `deviceState.started` dropouts in the manager, FrogPilot process, and Qt UI so brief ignition/start glitches no longer kick the device into an offroad-style process restart while driving
-  * Deferred FrogPilot toggle backups, theme/update maintenance, and other non-critical maintenance work to offroad so heavy background work no longer competes with onroad runtime behavior
-  * Rebuilt the device UI binary from UTM against comma-compatible capnp/ffmpeg libraries and revalidated the runtime dependency set before deployment
-* Device deployment safety
-  * Kept the runtime library compatibility path in `launch_env.sh` so git-based updates do not strand the device at boot when the checked-in UI binary needs compatibility symlinks
-  * Synced the latest patched Python/runtime files together with the compiled UI binary so the comma device and repo stay aligned after updates
+핫픽스 업데이트 (2026-03-18)
+===========================
+* 런타임 안정성
+  * manager, FrogPilot process, Qt UI에서 `deviceState.started`의 순간적인 drop을 debounce해, 짧은 시동/점화 흔들림이 주행 중 offroad식 프로세스 재시작으로 이어지지 않도록 수정
+  * FrogPilot 토글 백업, 테마/업데이트 유지보수 등 비핵심 작업은 offroad로 미뤄, 무거운 백그라운드 작업이 onroad 동작과 경쟁하지 않도록 조정
+  * comma 호환 capnp/ffmpeg 라이브러리 기준으로 UTM에서 기기 UI 바이너리를 다시 빌드하고, 배포 전 런타임 의존성 재검증
+* 기기 배포 안정성
+  * git 기반 업데이트 후에도, 체크인된 UI 바이너리에 필요한 호환 symlink 때문에 기기 부팅이 막히지 않도록 `launch_env.sh`의 런타임 라이브러리 호환 경로 유지
+  * 최신 패치 Python/runtime 파일과 컴파일된 UI 바이너리를 함께 동기화해, comma 기기와 저장소 상태를 일치시킴
 
-Patch Update (2026-03-18)
+패치 업데이트 (2026-03-18)
 =========================
-* Onroad follow-up
-  * Fixed blindspot icon rendering so the icons track the real painter viewport and continue to work even when openpilot is not enabled
-  * Added blindspot glow styling, same-side blinker blink behavior, and stable left/right positioning after sidebar transitions
-  * Moved the standstill timer into the lower speed area and reformatted it to `0:00`
-  * Replaced the LFA text badge with `files/icons/lfa.png`, including gray/white/green state colors and a blue acceleration-override state
-  * Added steering wheel rotation based on steering angle, blue lateral-override coloring, torque-to-red coloring, and the steering-limit warning icon treatment
-* Drive summary and tracking
-  * Fixed FrogPilot drive summary persistence so recent drive time and distance flush correctly when switching from onroad to offroad
-* Sounds
-  * Synced `engage_tizi.wav` and `disengage_tizi.wav` to the customized engage/disengage sounds so git updates keep the intended comma-device alert sounds
-* Packaging
-  * Rebuilt and checked in the current device UI binary for this patch set
+* Onroad 후속 정리
+  * blindspot 아이콘이 실제 painter viewport를 따라가며, openpilot 비활성 상태에서도 계속 정상 동작하도록 렌더링 수정
+  * blindspot glow 스타일, 같은 방향 방향지시등 점멸, sidebar 전환 후 좌우 위치 안정화 추가
+  * standstill timer를 속도 영역 하단으로 옮기고 `0:00` 형식으로 재정리
+  * LFA 텍스트 배지를 `files/icons/lfa.png`로 교체하고, 회색/흰색/초록색 상태와 파란 가속 오버라이드 상태 반영
+  * 조향각 기반 steering wheel 회전, lateral override 시 파란색, 토크가 강할 때 빨간색, steering-limit 경고 아이콘 처리 추가
+* 주행 요약 및 추적
+  * onroad -> offroad 전환 시 최근 주행 시간/거리가 정상 flush되도록 FrogPilot drive summary persistence 수정
+* 사운드
+  * git 업데이트 후에도 의도한 comma 기기 알림음이 유지되도록 `engage_tizi.wav`, `disengage_tizi.wav`를 커스텀 engage/disengage 사운드와 동기화
+* 패키징
+  * 이 패치 세트에 맞춰 최신 기기 UI 바이너리 재빌드 및 체크인
 
-Version testing-v1 custom patch (2026-03-18)
-============================================
-* Onroad UI refresh
-  * Reworked the HUD layout, set speed presentation, and steering wheel/driver monitoring placement
-  * Added disengaged grayscale camera treatment with a gray path visualization
-  * Removed the fullscreen left-edge border artifact and hid the onroad screen recording button
-  * Cleaned up FrogPilot speed limit and border overlay behavior for the current layout
-  * Added edge-mounted blindspot warning icons with matching turn-signal blink behavior and improved UTM onroad preview positioning
-* Offroad UI refresh
-  * Replaced the default offroad home with a black greeting screen and a round settings button
-  * Added a recent drive summary mode after onroad ends with drive time, distance, and openpilot usage rate
-  * Added a default idle offroad view showing cumulative FrogPilot driving totals
-  * Fixed settings interaction on PC/UTM preview and corrected FrogPilotSeconds parsing for total drive time
-* Alerts, events, and sounds
-  * Applied updated English/Korean event wording where matching events existed in the current branch
-  * Updated FCW behavior and wording, plus lead departing and steering-related alert text changes
-  * Restored the stock alert renderer after iterating on custom alert card designs
-  * Synced the current sound set to the sunnypilot staging-n assets used for this branch
-* Runtime and preview improvements
-  * Disabled automatic shutdown in power monitoring for this build
-  * Improved UTM host preview behavior, offroad preview flow, and simulator support for UI iteration
-  * Included manager/UI-side fixes needed for reliable local preview and device deployment
-* Packaging
-  * Checked in the current compiled device UI binary for this testing-v1 customization set
-  * Added the missing libyuv runtime files and weston/wayland launch environment needed for the checked-in UI binary to boot correctly after a git-based device update
+버전 testing-v1 커스텀 패치 (2026-03-18)
+=========================================
+* Onroad UI 개편
+  * HUD 레이아웃, 설정속도 표시, steering wheel / driver monitoring 배치를 재구성
+  * disengaged 상태에서 회색 카메라 처리와 회색 path 시각화 추가
+  * 전체화면 왼쪽 테두리 아티팩트 제거, onroad 화면 녹화 버튼 숨김
+  * 현재 레이아웃 기준으로 FrogPilot 속도 제한 / 경계선 오버레이 동작 정리
+  * 가장자리 배치 blindspot 경고 아이콘과 turn-signal blink 동작 추가, UTM onroad preview 위치도 개선
+* Offroad UI 개편
+  * 기본 offroad 홈을 검은 인사 화면 + 원형 설정 버튼으로 교체
+  * onroad 종료 후 최근 주행 시간, 거리, openpilot 사용률을 보여주는 recent drive summary 모드 추가
+  * 누적 FrogPilot 주행 통계를 보여주는 기본 idle offroad 화면 추가
+  * PC/UTM preview에서 설정 상호작용을 수정하고, 총 주행 시간 계산을 위해 FrogPilotSeconds 파싱도 보정
+* 알럿 / 이벤트 / 사운드
+  * 현재 브랜치에 존재하는 이벤트를 기준으로 영어/한국어 문구 갱신 반영
+  * FCW 동작 및 문구, lead departing, 조향 관련 알럿 문구 조정
+  * 커스텀 알럿 카드 디자인 실험 후, stock alert renderer로 복원
+  * 이 브랜치에서 쓰는 sunnypilot staging-n 계열 사운드 세트를 동기화
+* 런타임 및 프리뷰 개선
+  * 이 빌드에서는 power monitoring의 자동 종료 비활성화
+  * UTM host preview, offroad preview 흐름, simulator 지원을 개선해 UI 반복 작업을 수월하게 조정
+  * 로컬 preview와 기기 배포가 안정적으로 돌아가도록 manager/UI 측 수정 포함
+* 패키징
+  * 이 testing-v1 커스터마이징 세트에 맞는 컴파일된 기기 UI 바이너리 체크인
+  * git 기반 기기 업데이트 후에도 UI가 정상 부팅되도록, 누락돼 있던 libyuv 런타임 파일과 weston/wayland launch 환경 추가
 
-Version 0.10.3 (2025-12-17)
+버전 0.10.3 (2025-12-17)
 ========================
 * New driving model #36249
   * New temporal policy architecture
@@ -235,11 +235,11 @@ Version 0.10.3 (2025-12-17)
   * Trained on a new dataset, including comma four data
 * Improved inter-process communication memory efficiency
 
-Version 0.10.2 (2025-11-19)
+버전 0.10.2 (2025-11-19)
 ========================
 * comma four support
 
-Version 0.10.1 (2025-09-08)
+버전 0.10.1 (2025-09-08)
 ========================
 * New driving model #36276
   * World Model: removed global localization inputs
@@ -254,7 +254,7 @@ Version 0.10.1 (2025-09-08)
 * Honda Odyssey 2021-25 support thanks to csouers and MVL!
 * Honda Passport 2026 support thanks to vanillagorillaa and MVL!
 
-Version 0.10.0 (2025-08-05)
+버전 0.10.0 (2025-08-05)
 ========================
 * New driving model
   * New training architecture
@@ -269,7 +269,7 @@ Version 0.10.0 (2025-08-05)
 * Honda CR-V 2023-25 support thanks to vanillagorillaa and MVL!
 * Honda Pilot 2023-25 support thanks to vanillagorillaa and MVL!
 
-Version 0.9.9 (2025-05-23)
+버전 0.9.9 (2025-05-23)
 ========================
 * New driving model
   * New training architecture using parts from MLSIM
@@ -280,7 +280,7 @@ Version 0.9.9 (2025-05-23)
 * Tesla Model 3 and Y support thanks to lukasloetkolben!
 * Lexus RC 2023 support thanks to nelsonjchen!
 
-Version 0.9.8 (2025-02-28)
+버전 0.9.8 (2025-02-28)
 ========================
 * New driving model
   * Model now gates applying positive acceleration in Chill mode
@@ -297,7 +297,7 @@ Version 0.9.8 (2025-02-28)
 * Rivian R1S and R1T support thanks to lukasloetkolben!
 * Ford F-150, F-150 Hybrid, Mach-E, and Ranger support
 
-Version 0.9.7 (2024-06-13)
+버전 0.9.7 (2024-06-13)
 ========================
 * New driving model
   * Inputs the past curvature for smoother and more accurate lateral control
@@ -310,7 +310,7 @@ Version 0.9.7 (2024-06-13)
 * Fingerprinting without the OBD-II port on all cars
 * Improved fuzzy fingerprinting for Ford and Volkswagen
 
-Version 0.9.6 (2024-02-27)
+버전 0.9.6 (2024-02-27)
 ========================
 * New driving model
   * Vision model trained on more data
@@ -333,7 +333,7 @@ Version 0.9.6 (2024-02-27)
 * Toyota RAV4 2023-24 support
 * Toyota RAV4 Hybrid 2023-24 support
 
-Version 0.9.5 (2023-11-17)
+버전 0.9.5 (2023-11-17)
 ========================
 * New driving model
   * Improved navigate on openpilot performance using navigation instructions as an additional model input
@@ -351,7 +351,7 @@ Version 0.9.5 (2023-11-17)
 * Lexus GS F 2016 support thanks to snyperifle!
 * Lexus IS 2023 support thanks to L3R5!
 
-Version 0.9.4 (2023-07-27)
+버전 0.9.4 (2023-07-27)
 ========================
 * comma 3X support
 * Navigate on openpilot in Experimental mode
@@ -367,7 +367,7 @@ Version 0.9.4 (2023-07-27)
 * Ford Focus 2018 support
 * Kia Carnival 2023 support thanks to sunnyhaibin!
 
-Version 0.9.3 (2023-06-29)
+버전 0.9.3 (2023-06-29)
 ========================
 * New driving model
   * Improved height estimation and added height tracking in liveCalibration
@@ -380,7 +380,7 @@ Version 0.9.3 (2023-06-29)
 * Improved fuzzy fingerprinting for Hyundai, Kia, and Genesis
 * Improved thermal management logic
 
-Version 0.9.2 (2023-05-22)
+버전 0.9.2 (2023-05-22)
 ========================
 * New driving model
   * Reduced turn diving
@@ -407,7 +407,7 @@ Version 0.9.2 (2023-05-22)
 * Škoda Fabia 2022-23 support thanks to jyoung8607!
 
 
-Version 0.9.1 (2023-02-28)
+버전 0.9.1 (2023-02-28)
 ========================
 * New driving model
   * 30% improved height estimation resulting in better driving performance for tall cars
@@ -428,7 +428,7 @@ Version 0.9.1 (2023-02-28)
 * Toyota C-HR Hybrid 2022 support thanks to Korben00!
 * Volkswagen Crafter and MAN TGE 2017-23 support thanks to jyoung8607!
 
-Version 0.9.0 (2022-11-21)
+버전 0.9.0 (2022-11-21)
 ========================
 * New driving model
   * Internal feature space information content increased tenfold during training to ~700 bits, which makes the model dramatically more accurate
@@ -461,7 +461,7 @@ Version 0.9.0 (2022-11-21)
 * Kia Sportage Hybrid 2023 support thanks to sunnyhaibin!
 * Kia Stinger 2022 support thanks to sunnyhaibin!
 
-Version 0.8.16 (2022-08-26)
+버전 0.8.16 (2022-08-26)
 ========================
 * New driving model
   * Reduced turn cutting
@@ -479,7 +479,7 @@ Version 0.8.16 (2022-08-26)
 * Subaru Legacy 2020-22 support thanks to martinl!
 * Subaru Outback 2020-22 support
 
-Version 0.8.15 (2022-07-20)
+버전 0.8.15 (2022-07-20)
 ========================
 * New driving model
   * Path planning uses end-to-end output instead of lane lines at all times
@@ -514,7 +514,7 @@ Version 0.8.15 (2022-07-20)
 * Lexus NX Hybrid 2020 support thanks to AlexandreSato!
 * Ram 1500 2019-21 support thanks to realfast!
 
-Version 0.8.14 (2022-06-01)
+버전 0.8.14 (2022-06-01)
 ========================
  * New driving model
    * Bigger model, using both of comma three's road-facing cameras
@@ -533,7 +533,7 @@ Version 0.8.14 (2022-06-01)
  * Toyota RAV4 2022 support
  * Toyota RAV4 Hybrid 2022 support
 
-Version 0.8.13 (2022-02-18)
+버전 0.8.13 (2022-02-18)
 ========================
  * Improved driver monitoring
    * Re-tuned driver pose learner for relaxed driving positions
@@ -555,7 +555,7 @@ Version 0.8.13 (2022-02-18)
  * Toyota Prius v 2017 support thanks to CT921!
  * Volkswagen Caravelle 2020 support thanks to jyoung8607!
 
-Version 0.8.12 (2021-12-15)
+버전 0.8.12 (2021-12-15)
 ========================
  * New driving model
    * Improved behavior around exits
@@ -574,7 +574,7 @@ Version 0.8.12 (2021-12-15)
  * Audi Q3 2020-21 support thanks to jyoung8607!
  * Lexus RC 2020 support thanks to ErichMoraga!
 
-Version 0.8.11 (2021-11-29)
+버전 0.8.11 (2021-11-29)
 ========================
  * Support for CAN FD on the red panda
  * Support for an external panda on the comma three
@@ -588,7 +588,7 @@ Version 0.8.11 (2021-11-29)
  * Volkswagen Polo 2020 support thanks to jyoung8607!
  * Volkswagen T-Roc 2021 support thanks to jyoung8607!
 
-Version 0.8.10 (2021-11-01)
+버전 0.8.10 (2021-11-01)
 ========================
  * New driving model
    * Trained on one million minutes!!!
@@ -619,13 +619,13 @@ Version 0.8.10 (2021-11-01)
  * Volkswagen California 2021 support thanks to jyoung8607!
  * Volkswagen Taos 2022 support thanks to jyoung8607!
 
-Version 0.8.9 (2021-09-14)
+버전 0.8.9 (2021-09-14)
 ========================
  * Improved fan control on comma three
  * AGNOS 1.5: improved stability
  * Honda e 2020 support
 
-Version 0.8.8 (2021-08-27)
+버전 0.8.8 (2021-08-27)
 ========================
  * New driving model with improved laneless performance
    * Trained on 5000+ hours of diverse driving data from 3000+ users in 40+ countries
@@ -640,13 +640,13 @@ Version 0.8.8 (2021-08-27)
  * Hyundai Sonata Hybrid 2021 support thanks to Matt-Wash-Burn!
  * Kia Niro Hybrid 2021 support thanks to tetious!
 
-Version 0.8.7 (2021-07-31)
+버전 0.8.7 (2021-07-31)
 ========================
  * comma three support!
  * Navigation alpha for the comma three!
  * Volkswagen T-Cross 2021 support thanks to jyoung8607!
 
-Version 0.8.6 (2021-07-21)
+버전 0.8.6 (2021-07-21)
 ========================
  * Revamp lateral and longitudinal planners
    * Refactor planner output API to be more readable and verbose
@@ -662,7 +662,7 @@ Version 0.8.6 (2021-07-21)
  * Volkswagen Golf SportWagen 2015 support thanks to jona96!
  * Volkswagen Touran 2017 support thanks to jyoung8607!
 
-Version 0.8.5 (2021-06-11)
+버전 0.8.5 (2021-06-11)
 ========================
  * NEOS update: improved reliability and stability with better voltage regulator configuration
  * Smart model-based Forward Collision Warning
@@ -677,7 +677,7 @@ Version 0.8.5 (2021-06-11)
  * SEAT Leon 2017 & 2020 support thanks to jyoung8607!
  * Škoda Octavia 2015 & 2019 support thanks to jyoung8607!
 
-Version 0.8.4 (2021-05-17)
+버전 0.8.4 (2021-05-17)
 ========================
  * Delay controls start until system is ready
  * Fuzzy car identification, enabled with Community Features toggle
@@ -687,7 +687,7 @@ Version 0.8.4 (2021-05-17)
  * Lexus NX 300 2020 support thanks to goesreallyfast!
  * Volkswagen Atlas 2018-19 support thanks to jyoung8607!
 
-Version 0.8.3 (2021-04-01)
+버전 0.8.3 (2021-04-01)
 ========================
  * New model
    * Trained on new diverse dataset from 2000+ users from 30+ countries
@@ -701,7 +701,7 @@ Version 0.8.3 (2021-04-01)
  * Kia Seltos 2021 support thanks to speedking456!
  * Added support for many Volkswagen and Škoda models thanks to jyoung8607!
 
-Version 0.8.2 (2021-02-26)
+버전 0.8.2 (2021-02-26)
 ========================
  * Use model points directly in MPC (no more polyfits), making lateral planning more accurate
  * Use model heading prediction for smoother lateral control
@@ -718,7 +718,7 @@ Version 0.8.2 (2021-02-26)
  * Lexus ES Hybrid 2018 support thanks to TheInventorMan!
  * Toyota Camry Hybrid 2021 support thanks to alancyau!
 
-Version 0.8.1 (2020-12-21)
+버전 0.8.1 (2020-12-21)
 ========================
  * Original EON is deprecated, upgrade to comma two
  * Better model performance in heavy rain
@@ -728,7 +728,7 @@ Version 0.8.1 (2020-12-21)
  * Toyota Camry 2021 with TSS2.5 support
  * Hyundai Ioniq Electric 2020 support thanks to baldwalker!
 
-Version 0.8.0 (2020-11-30)
+버전 0.8.0 (2020-11-30)
 ========================
  * New driving model: fully 3D and improved cut-in detection
  * UI draws 2 road edges, 4 lanelines and paths in 3D
@@ -740,7 +740,7 @@ Version 0.8.0 (2020-11-30)
  * Improved lane positioning with uncertain lanelines, wide lanes and exits
  * Improved lateral control for Prius and Subaru
 
-Version 0.7.10 (2020-10-29)
+버전 0.7.10 (2020-10-29)
 ========================
  * Grey panda is deprecated, upgrade to comma two or black panda
  * NEOS update: update to Python 3.8.2 and lower CPU frequency
@@ -750,7 +750,7 @@ Version 0.7.10 (2020-10-29)
  * Various system stability improvements
  * Acura RDX 2020 support thanks to csouers!
 
-Version 0.7.9 (2020-10-09)
+버전 0.7.9 (2020-10-09)
 ========================
  * Improved car battery power management
  * Improved updater robustness
@@ -758,14 +758,14 @@ Version 0.7.9 (2020-10-09)
  * Reduced UI and modeld lags
  * Increased torque on 2020 Hyundai Sonata and Palisade
 
-Version 0.7.8 (2020-08-19)
+버전 0.7.8 (2020-08-19)
 ========================
  * New driver monitoring model: improved face detection and better compatibility with sunglasses
  * Download NEOS operating system updates in the background
  * Improved updater reliability and responsiveness
  * Hyundai Kona 2020, Veloster 2019, and Genesis G70 2018 support thanks to xps-genesis!
 
-Version 0.7.7 (2020-07-20)
+버전 0.7.7 (2020-07-20)
 ========================
  * White panda is no longer supported, upgrade to comma two or black panda
  * Improved vehicle model estimation using high precision localizer
@@ -779,11 +779,11 @@ Version 0.7.7 (2020-07-20)
  * Hyundai Ioniq Electric Limited 2019 and Ioniq SE 2020 support thanks to baldwalker!
  * Subaru Forester 2019 and Ascent 2019 support thanks to martinl!
 
-Version 0.7.6.1 (2020-06-16)
+버전 0.7.6.1 (2020-06-16)
 ========================
  * Hotfix: update kernel on some comma twos (orders #8570-#8680)
 
-Version 0.7.6 (2020-06-05)
+버전 0.7.6 (2020-06-05)
 ========================
  * White panda is deprecated, upgrade to comma two or black panda
  * 2017 Nissan X-Trail, 2018-19 Leaf and 2019 Rogue support thanks to avolmensky!
@@ -791,7 +791,7 @@ Version 0.7.6 (2020-06-05)
  * Huge CPU savings in modeld by using thneed!
  * Lots of code cleanup and refactors
 
-Version 0.7.5 (2020-05-13)
+버전 0.7.5 (2020-05-13)
 ========================
  * Right-Hand Drive support for both driving and driver monitoring!
  * New driving model: improved at sharp turns and lead speed estimation
@@ -800,7 +800,7 @@ Version 0.7.5 (2020-05-13)
  * Added support for many Hyundai, Kia, Genesis models thanks to xx979xx!
  * Improved lateral tuning for 2020 Toyota Rav 4 (hybrid)
 
-Version 0.7.4 (2020-03-20)
+버전 0.7.4 (2020-03-20)
 ========================
  * New driving model: improved lane changes and lead car detection
  * Improved driver monitoring model: improve eye detection
@@ -811,14 +811,14 @@ Version 0.7.4 (2020-03-20)
  * Support for Honda Insight thanks to theantihero!
  * Code cleanup in car abstraction layers and ui
 
-Version 0.7.3 (2020-02-21)
+버전 0.7.3 (2020-02-21)
 ========================
  * Support for 2020 Highlander thanks to che220!
  * Support for 2018 Lexus NX 300h thanks to kengggg!
  * Speed up ECU firmware query
  * Fix bug where manager would sometimes hang after shutting down the car
 
-Version 0.7.2 (2020-02-07)
+버전 0.7.2 (2020-02-07)
 ========================
  * ECU firmware version based fingerprinting for Honda & Toyota
  * New driving model: improved path prediction during turns and lane changes and better lead speed tracking
@@ -827,7 +827,7 @@ Version 0.7.2 (2020-02-07)
  * Support for 2016, 2017 and 2020 Lexus RX thanks to illumiN8i!
  * Support for 2020 Chrysler Pacifica Hybrid thanks to adhintz!
 
-Version 0.7.1 (2020-01-20)
+버전 0.7.1 (2020-01-20)
 ========================
  * comma two support!
  * Lane Change Assist above 45 mph!
@@ -836,7 +836,7 @@ Version 0.7.1 (2020-01-20)
  * More robust updater thanks to jyoung8607! Requires NEOS update
  * Improve low speed ACC tuning
 
-Version 0.7 (2019-12-13)
+버전 0.7 (2019-12-13)
 ========================
  * Move to SCons build system!
  * Add Lane Departure Warning (LDW) for all supported vehicles!
@@ -851,7 +851,7 @@ Version 0.7 (2019-12-13)
  * Forward stock FCW for Honda Nidec
  * Volkswagen port now standard: comma Harness intercepts stock camera
 
-Version 0.6.6 (2019-11-05)
+버전 0.6.6 (2019-11-05)
 ========================
  * Volkswagen support thanks to jyoung8607!
  * Toyota Corolla Hybrid with TSS 2.0 support thanks to u8511049!
@@ -864,7 +864,7 @@ Version 0.6.6 (2019-11-05)
  * Fix bug preventing EON from terminating processes after a drive
  * Remove support for Toyota giraffe without the 120Ohm resistor
 
-Version 0.6.5 (2019-10-07)
+버전 0.6.5 (2019-10-07)
 ========================
  * NEOS update: upgrade to Python3 and new installer!
  * comma Harness support!
@@ -878,7 +878,7 @@ Version 0.6.5 (2019-10-07)
  * Add toggle to switch to dashcam mode
  * Fix "invalid vehicle params" error on DSU-less Toyota
 
-Version 0.6.4 (2019-09-08)
+버전 0.6.4 (2019-09-08)
 ========================
  * Forward stock AEB for Honda Nidec
  * Improve lane centering on banked roads
@@ -888,7 +888,7 @@ Version 0.6.4 (2019-09-08)
  * Honda Fit support thanks to energee!
  * Lexus IS support
 
-Version 0.6.3 (2019-08-12)
+버전 0.6.3 (2019-08-12)
 ========================
  * Alert sounds from EON: requires NEOS update
  * Improve driver monitoring: eye tracking and improved awareness logic
@@ -899,7 +899,7 @@ Version 0.6.3 (2019-08-12)
  * Open sourced regression test to verify outputs against reference logs
  * Open sourced regression test to sanity check all car models
 
-Version 0.6.2 (2019-07-29)
+버전 0.6.2 (2019-07-29)
 ========================
  * New driving model!
  * Improve lane tracking with double lines
@@ -911,14 +911,14 @@ Version 0.6.2 (2019-07-29)
  * Fix unintended openpilot disengagements on Jeep thanks to adhintz!
  * Fix delayed transition to offroad when car is turned off
 
-Version 0.6.1 (2019-07-21)
+버전 0.6.1 (2019-07-21)
 ========================
  * Remote SSH with comma prime and [ssh.comma.ai](https://ssh.comma.ai)
  * Panda code Misra-c2012 compliance, tested against cppcheck coverage
  * Lockout openpilot after 3 terminal alerts for driver distracted or unresponsive
  * Toyota Sienna support thanks to wocsor!
 
-Version 0.6 (2019-07-01)
+버전 0.6 (2019-07-01)
 ========================
  * New model, with double the pixels and ten times the temporal context!
  * Car should not take exits when in the right lane
@@ -931,7 +931,7 @@ Version 0.6 (2019-07-01)
  * Improve tuning for supported Toyota with TSS 2.0
  * Various other stability improvements
 
-Version 0.5.13 (2019-05-31)
+버전 0.5.13 (2019-05-31)
 ==========================
  * Reduce panda power consumption by 70%, down to 80mW, when car is off (not for GM)
  * Reduce EON power consumption by 40%, down to 1100mW, when car is off
@@ -941,7 +941,7 @@ Version 0.5.13 (2019-05-31)
  * Synchronize controlsd to pandad to reduce latency
  * Remove panda support for Subaru giraffe
 
-Version 0.5.12 (2019-05-16)
+버전 0.5.12 (2019-05-16)
 ==========================
  * Improve lateral control for the Prius and Prius Prime
  * Compress logs before writing to disk
@@ -955,7 +955,7 @@ Version 0.5.12 (2019-05-16)
  * Toyota Rav4 with TSS 2.0 support thanks to wocsor!
  * Toyota Corolla with TSS 2.0 support thanks to wocsor!
 
-Version 0.5.11 (2019-04-17)
+버전 0.5.11 (2019-04-17)
 ========================
  * Add support for Subaru
  * Reduce panda power consumption by 60% when car is off
@@ -969,7 +969,7 @@ Version 0.5.11 (2019-04-17)
  * Improve road selection heuristic in mapd
  * Add Lane Departure Warning to dashboard for Toyota thanks to arne182
 
-Version 0.5.10 (2019-03-19)
+버전 0.5.10 (2019-03-19)
 ========================
  * Self-tuning vehicle parameters: steering offset, tire stiffness and steering ratio
  * Improve longitudinal control at low speed when lead vehicle harshly decelerates
@@ -982,7 +982,7 @@ Version 0.5.10 (2019-03-19)
  * Additional speed limit rules for Germany thanks to arne182
  * Allow negative speed limit offsets
 
-Version 0.5.9 (2019-02-10)
+버전 0.5.9 (2019-02-10)
 ========================
  * Improve calibration using a dedicated neural network
  * Abstract planner in its own process to remove lags in controls process
@@ -994,7 +994,7 @@ Version 0.5.9 (2019-02-10)
  * Comma pedal support for Toyota thanks to wocsor! Note: tuning needed and not maintained by comma
  * Chrysler Pacifica and Jeep Grand Cherokee support thanks to adhintz!
 
-Version 0.5.8 (2019-01-17)
+버전 0.5.8 (2019-01-17)
 ========================
  * Open sourced visiond
  * Auto-slowdown for upcoming turns
@@ -1004,7 +1004,7 @@ Version 0.5.8 (2019-01-17)
  * No data upload when connected to Android or iOS hotspots and "Enable Upload Over Cellular" setting is off
  * EON stops charging when 12V battery drops below 11.8V
 
-Version 0.5.7 (2018-12-06)
+버전 0.5.7 (2018-12-06)
 ========================
  * Speed limit from OpenStreetMap added to UI
  * Highlight speed limit when speed exceeds road speed limit plus a delta
@@ -1014,7 +1014,7 @@ Version 0.5.7 (2018-12-06)
  * Decrease GPU power consumption
  * NEOSv8 autoupdate
 
-Version 0.5.6 (2018-11-16)
+버전 0.5.6 (2018-11-16)
 ========================
  * Refresh settings layout and add feature descriptions
  * In Honda, keep stock camera on for logging and extra stock features; new openpilot giraffe setting is 0111!
@@ -1025,13 +1025,13 @@ Version 0.5.6 (2018-11-16)
  * Chevrolet Malibu support thanks to tylergets!
  * Holden Astra support thanks to AlexHill!
 
-Version 0.5.5 (2018-10-20)
+버전 0.5.5 (2018-10-20)
 ========================
  * Increase allowed Honda positive accelerations
  * Fix sporadic unexpected braking when passing semi-trucks in Toyota
  * Fix gear reading bug in Hyundai Elantra thanks to emmertex!
 
-Version 0.5.4 (2018-09-25)
+버전 0.5.4 (2018-09-25)
 ========================
  * New Driving Model
  * New Driver Monitoring Model
@@ -1042,14 +1042,14 @@ Version 0.5.4 (2018-09-25)
  * More Hyundai and Kia cars supported thanks to emmertex!
  * Various GM Volt improvements thanks to vntarasov!
 
-Version 0.5.3 (2018-09-03)
+버전 0.5.3 (2018-09-03)
 ========================
  * Hyundai Santa Fe support!
  * Honda Pilot 2019 support thanks to energee!
  * Toyota Highlander support thanks to daehahn!
  * Improve steering tuning for Honda Odyssey
 
-Version 0.5.2 (2018-08-16)
+버전 0.5.2 (2018-08-16)
 ========================
  * New calibration: more accurate, a lot faster, open source!
  * Enable orbd
@@ -1057,14 +1057,14 @@ Version 0.5.2 (2018-08-16)
  * Fix fingerprint for Honda Accord 1.5T
  * Improve driver monitoring model
 
-Version 0.5.1 (2018-08-01)
+버전 0.5.1 (2018-08-01)
 ========================
  * Fix radar error on Civic sedan 2018
  * Improve thermal management logic
  * Alpha Toyota C-HR and Camry support!
  * Auto-switch Driver Monitoring to 3 min counter when inaccurate
 
-Version 0.5 (2018-07-11)
+버전 0.5 (2018-07-11)
 ========================
  * Driver Monitoring (beta) option in settings!
  * Make visiond, loggerd and UI use less resources
@@ -1075,18 +1075,18 @@ Version 0.5 (2018-07-11)
  * Remove rear view mirror option
  * Calibration 3x faster
 
-Version 0.4.7.2 (2018-06-25)
+버전 0.4.7.2 (2018-06-25)
 ==========================
  * Fix loggerd lag issue
  * No longer prompt for updates
  * Mitigate right lane hugging for properly mounted EON (procedure on wiki)
 
-Version 0.4.7.1 (2018-06-18)
+버전 0.4.7.1 (2018-06-18)
 ==========================
  * Fix Acura ILX steer faults
  * Fix bug in mock car
 
-Version 0.4.7 (2018-06-15)
+버전 0.4.7 (2018-06-15)
 ==========================
  * New model!
  * GM Volt (and CT6 lateral) support!
@@ -1095,7 +1095,7 @@ Version 0.4.7 (2018-06-15)
  * Minor refactor of car abstraction layer
  * Hack around orbd startup issue
 
-Version 0.4.6 (2018-05-18)
+버전 0.4.6 (2018-05-18)
 ==========================
  * NEOSv6 required! Will autoupdate
  * Stability improvements
@@ -1103,7 +1103,7 @@ Version 0.4.6 (2018-05-18)
  * Update C++ compiler to clang6
  * Improve front camera exposure
 
-Version 0.4.5 (2018-04-27)
+버전 0.4.5 (2018-04-27)
 ==========================
  * Release notes added to the update popup
  * Improve auto shut-off logic to disallow empty battery
@@ -1113,7 +1113,7 @@ Version 0.4.5 (2018-04-27)
  * Fix UI bugs
  * Fix memory leaks
 
-Version 0.4.4 (2018-04-13)
+버전 0.4.4 (2018-04-13)
 ==========================
  * EON are flipped! Flip your EON's mount!
  * Alpha Honda Ridgeline support thanks to energee!
@@ -1123,7 +1123,7 @@ Version 0.4.4 (2018-04-13)
  * User now prompted for future updates
  * NEO no longer supported :(
 
-Version 0.4.3.2 (2018-03-29)
+버전 0.4.3.2 (2018-03-29)
 ============================
  * Improve autofocus
  * Improve driving when only one lane line is detected
@@ -1132,13 +1132,13 @@ Version 0.4.3.2 (2018-03-29)
  * Full-screen driving UI
  * Improved path drawing
 
-Version 0.4.3.1 (2018-03-19)
+버전 0.4.3.1 (2018-03-19)
 ============================
  * Improve autofocus
  * Add check for MPC solution error
  * Make first distracted warning visual only
 
-Version 0.4.3 (2018-03-13)
+버전 0.4.3 (2018-03-13)
 ==========================
  * Add HDR and autofocus
  * Update UI aesthetic
@@ -1150,14 +1150,14 @@ Version 0.4.3 (2018-03-13)
  * Fix openpilot bugs when stock system is in use
  * Change starting logic for chffrplus to use battery voltage
 
-Version 0.4.2 (2018-02-05)
+버전 0.4.2 (2018-02-05)
 ==========================
  * Add alpha support for 2017 Lexus RX Hybrid
  * Add alpha support for 2018 ACURA RDX
  * Updated fingerprint to include Toyota Rav4 SE and Prius Prime
  * Bugfixes for Acura ILX and Honda Odyssey
 
-Version 0.4.1 (2018-01-30)
+버전 0.4.1 (2018-01-30)
 ==========================
  * Add alpha support for 2017 Toyota Corolla
  * Add alpha support for 2018 Honda Odyssey with Honda Sensing
@@ -1165,12 +1165,12 @@ Version 0.4.1 (2018-01-30)
  * Refactored car abstraction layer to make car ports easier
  * Increased steering torque limit on Honda CR-V by 30%
 
-Version 0.4.0.2 (2018-01-18)
+버전 0.4.0.2 (2018-01-18)
 ==========================
  * Add focus adjustment slider
  * Minor bugfixes
 
-Version 0.4.0.1 (2017-12-21)
+버전 0.4.0.1 (2017-12-21)
 ==========================
  * New UI to match chffrplus
  * Improved lateral control tuning to fix oscillations on Civic
@@ -1179,21 +1179,21 @@ Version 0.4.0.1 (2017-12-21)
  * Removed unnecessary utilization of fan at max speed
  * Minor bug fixes
 
-Version 0.3.9 (2017-11-21)
+버전 0.3.9 (2017-11-21)
 ==========================
  * Add alpha support for 2017 Toyota Prius
  * Improved longitudinal control using model predictive control
  * Enable Forward Collision Warning
  * Acura ILX now maintains openpilot engaged at standstill when brakes are applied
 
-Version 0.3.8.2 (2017-10-30)
+버전 0.3.8.2 (2017-10-30)
 ==========================
  * Add alpha support for 2017 Toyota RAV4
  * Smoother lateral control
  * Stay silent if stock system is connected through giraffe
  * Minor bug fixes
 
-Version 0.3.7 (2017-09-30)
+버전 0.3.7 (2017-09-30)
 ==========================
  * Improved lateral control using model predictive control
  * Improved lane centering
@@ -1205,12 +1205,12 @@ Version 0.3.7 (2017-09-30)
  * Fixed sporadic longitudinal pulsing in Civic
  * Cleanups to vehicle interface
 
-Version 0.3.6.1 (2017-08-15)
+버전 0.3.6.1 (2017-08-15)
 ============================
  * Mitigate low speed steering oscillations on some vehicles
  * Include board steering check for CR-V
 
-Version 0.3.6 (2017-08-08)
+버전 0.3.6 (2017-08-08)
 ==========================
  * Fix alpha CR-V support
  * Improved GPS
@@ -1218,12 +1218,12 @@ Version 0.3.6 (2017-08-08)
  * Increased acceleration after stop
  * Mitigated some vehicles driving too close to the right line
 
-Version 0.3.5 (2017-07-30)
+버전 0.3.5 (2017-07-30)
 ==========================
  * Fix bug where new devices would not begin calibration
  * Minor robustness improvements
 
-Version 0.3.4 (2017-07-28)
+버전 0.3.4 (2017-07-28)
 ==========================
  * Improved model trained on more data
  * Much improved controls tuning
@@ -1232,7 +1232,7 @@ Version 0.3.4 (2017-07-28)
  * Driving log can play back video
  * Acura only: system now stays engaged below 25mph as long as brakes are applied
 
-Version 0.3.3  (2017-06-28)
+버전 0.3.3  (2017-06-28)
 ===========================
  * Improved model trained on more data
  * Alpha CR-V support thanks to energee and johnnwvs!
@@ -1242,18 +1242,18 @@ Version 0.3.3  (2017-06-28)
  * Power off button
  * 6% more torque on the Civic
 
-Version 0.3.2  (2017-05-22)
+버전 0.3.2  (2017-05-22)
 ===========================
  * Minor stability bugfixes
  * Added metrics and rear view mirror disable to settings
  * Update model with more crowdsourced data
 
-Version 0.3.1  (2017-05-17)
+버전 0.3.1  (2017-05-17)
 ===========================
  * visiond stability bugfix
  * Add logging for angle and flashing
 
-Version 0.3.0  (2017-05-12)
+버전 0.3.0  (2017-05-12)
 ===========================
  * Add CarParams struct to improve the abstraction layer
  * Refactor visiond IPC to support multiple clients
@@ -1263,53 +1263,53 @@ Version 0.3.0  (2017-05-12)
  * Rewrite baseui in React Native
  * Moved calibration to the cloud
 
-Version 0.2.9  (2017-03-01)
+버전 0.2.9  (2017-03-01)
 ===========================
  * Retain compatibility with NEOS v1
 
-Version 0.2.8  (2017-02-27)
+버전 0.2.8  (2017-02-27)
 ===========================
  * Fix bug where frames were being dropped in minute 71
 
-Version 0.2.7  (2017-02-08)
+버전 0.2.7  (2017-02-08)
 ===========================
  * Better performance and pictures at night
  * Fix ptr alignment issue in pandad
  * Fix brake error light, fix crash if too cold
 
-Version 0.2.6  (2017-01-31)
+버전 0.2.6  (2017-01-31)
 ===========================
  * Fix bug in visiond model execution
 
-Version 0.2.5  (2017-01-30)
+버전 0.2.5  (2017-01-30)
 ===========================
  * Fix race condition in manager
 
-Version 0.2.4  (2017-01-27)
+버전 0.2.4  (2017-01-27)
 ===========================
  * OnePlus 3T support
  * Enable installation as NEOS app
  * Various minor bugfixes
 
-Version 0.2.3  (2017-01-11)
+버전 0.2.3  (2017-01-11)
 ===========================
  * Reduce space usage by 80%
  * Add better logging
  * Add Travis CI
 
-Version 0.2.2  (2017-01-10)
+버전 0.2.2  (2017-01-10)
 ===========================
  * Board triggers started signal on CAN messages
  * Improved autoexposure
  * Handle out of space, improve upload status
 
-Version 0.2.1  (2016-12-14)
+버전 0.2.1  (2016-12-14)
 ===========================
  * Performance improvements, removal of more numpy
  * Fix pandad process priority
  * Make counter timer reset on use of steering wheel
 
-Version 0.2  (2016-12-12)
+버전 0.2  (2016-12-12)
 =========================
  * Car/Radar abstraction layers have shipped, see cereal/car.capnp
  * controlsd has been refactored
@@ -1320,7 +1320,7 @@ Version 0.2  (2016-12-12)
  * Switch to openpilot release branch for future releases
  * Added preliminary Docker container to run tests on PC
 
-Version 0.1  (2016-11-29)
+버전 0.1  (2016-11-29)
 =========================
  * Initial release of openpilot
  * Adaptive cruise control is working
