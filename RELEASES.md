@@ -1,3 +1,30 @@
+Patch Update (2026-04-05, APN dashboard/debug, alert cleanup, parked overlay)
+=============================================================================
+* GM / APN / fake-long tooling
+  * Added a dedicated `디버그` tab to the device dashboard for GM stock-ACC button-path validation
+  * Simplified the GM synthetic test path back to a `camera-only` route for comparison against the real wheel-button path
+  * Restored legacy onroad/web fake-long test payload compatibility while keeping the newer dashboard-driven debug flow
+  * Added GM cluster/current-speed correction helpers so displayed ACC set speed and current speed can follow calibrated cluster values instead of raw values
+  * Reclassified APN SDI types using the authoritative `nSdiType` mapping and refreshed special camera / protection-zone rendering around that mapping
+* Device web dashboard
+  * Renamed the dashboard header to `Openpilot Console`
+  * Reduced default onroad dashboard load by switching status to a lighter default summary and hiding heavier detail sections behind `더보기`
+  * Moved CAN-heavy and debug-heavy views behind explicit controls so they do not auto-poll by default while driving
+  * Added manual debug refresh plus an opt-in live mode for the debug tab instead of unconditional high-frequency polling
+  * Redesigned the mobile stats/dashboard presentation to show more useful information per screen while removing duplicated counters and low-value sections
+* Alerts / HUD / settings
+  * Added a new `안전벨트 착용 여부 미확인` toggle under `More`, allowing seatbelt no-entry suppression when explicitly enabled
+  * Added a seatbelt icon to the top-left of the current-speed HUD area while the belt is unlatched
+  * Changed alert precedence so `resumeRequired` suppresses driver distraction/unresponsive alerts and `belowSteerSpeed` while auto hold is active
+  * Added a parked standstill onroad overlay for `P + standstill`, using a dimmed full-screen presentation with `parking.png`, `정차중`, and an elapsed timer
+* Auto brightness
+  * Lowered the `true dark` threshold again so ordinary dim scenes stay brighter, and sub-floor dimming happens only in darker conditions
+* Packaging / deployment
+  * Fixed the UTM device-ABI UI build path after identifying an out-of-date UTM workspace / stale build-state issue
+  * Refreshed the checked-in device-side runtime artifacts:
+    * `common/params_pyx.so`
+    * `selfdrive/ui/ui`
+
 Patch Update (2026-03-22, power logic toggle restore)
 =====================================================
 * Device power management

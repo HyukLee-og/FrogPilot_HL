@@ -21,6 +21,8 @@ public:
 private:
   void drawSetSpeed(QPainter &p, const QRect &surface_rect);
   void drawCurrentSpeed(QPainter &p, const QRect &surface_rect);
+  void drawModifiedSpeed(QPainter &p, const QRect &speed_rect);
+  void drawSeatbeltIcon(QPainter &p, const QRect &surface_rect);
   void drawLfaIcon(QPainter &p, const QRect &surface_rect);
   void drawSteeringLimitWarningIcon(QPainter &p, const QRect &surface_rect);
   void drawSteeringWheelIcon(QPainter &p, const QRect &surface_rect);
@@ -36,10 +38,16 @@ private:
   bool v_ego_cluster_seen = false;
   bool selfdrive_enabled = false;
   bool selfdrive_engageable = false;
+  bool seatbelt_unlatched = false;
   bool longitudinal_override_active = false;
   bool lateral_override_active = false;
   bool steer_limit_warning_active = false;
   float steering_torque_pct = 0.0f;
   float steering_angle_deg = 0.0f;
+  float modified_speed = 0.0f;
+  bool show_modified_speed = false;
+  bool modified_speed_blink = false;
+  bool modified_speed_hide_phase = false;
+  QColor modified_speed_color = QColor(0xF6, 0xF8, 0xFB, 0xF4);
   int status = STATUS_DISENGAGED;
 };

@@ -84,6 +84,10 @@ except Exception as exc:
   MESSAGING_IMPORT_ERROR = str(exc)
 
 
+SDI_SECTION_TYPES = {2, 3, 4, 84, 85}
+SDI_CAMERA_TYPES = {0, 1, 5, 6, 7, 8, 9, 10, 64, 65, 75, 76}
+
+
 def safe_write_json(path: Path, payload: dict[str, Any]) -> None:
   path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
@@ -237,6 +241,14 @@ class APNBridge:
     except (TypeError, ValueError):
       return default
 
+  @classmethod
+  def _first_positive_float(cls, payload: dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+      value = cls._float_value(payload.get(key), default=-1.0)
+      if value > 0.0:
+        return value
+    return default
+
   @staticmethod
   def _normalize_speed_limit(value: Any) -> float:
     limit = APNBridge._float_value(value)
@@ -247,12 +259,43 @@ class APNBridge:
     return limit / 3.6
 
   @staticmethod
-  def _describe_hazard(sdi_type: int, sdi_section: int) -> str:
-    if sdi_type <= 0 and sdi_section <= 0:
+  def _bool_value(value: Any) -> bool:
+    if isinstance(value, bool):
+      return value
+    if isinstance(value, (int, float)):
+      return value != 0
+    if isinstance(value, str):
+      return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+  @staticmethod
+  def _effective_sdi_type(sdi_type: int, sdi_plus_type: int) -> int:
+    if sdi_plus_type > 0:
+      return sdi_plus_type
+    return sdi_type
+
+  @classmethod
+  def _describe_hazard(cls, sdi_type: int, sdi_plus_type: int, section_guidance: bool) -> str:
+    hazard_type = cls._effective_sdi_type(sdi_type, sdi_plus_type)
+    if hazard_type <= 0 and not section_guidance:
       return ""
-    if sdi_section > 0:
-      return f"section_camera:{sdi_type or 0}"
-    return f"camera:{sdi_type}"
+    if hazard_type in SDI_SECTION_TYPES:
+      return f"section_camera:{hazard_type}"
+    if hazard_type in SDI_CAMERA_TYPES:
+      return f"camera:{hazard_type}"
+    return f"sdi:{hazard_type or 0}"
+
+  @staticmethod
+  def _has_camera_guidance(hazard: str, hazard_distance: float, hazard_speed: float) -> bool:
+    return "camera" in hazard.lower() and hazard_distance > 0.0 and hazard_speed > 0.0
+
+  def _has_active_route_guidance(self, rgdata: dict[str, Any]) -> bool:
+    go_pos_dist = self._float_value(self._first_value(rgdata, "nGoPosDist", "ngoPosDist", default=0.0))
+    go_pos_time = self._float_value(self._first_value(rgdata, "nGoPosTime", "ngoPosTime", default=0.0))
+    tbt_dist = self._float_value(self._first_value(rgdata, "nTBTDist", "ntbtdist", default=0.0))
+    tbt_turn_type = int(round(self._float_value(self._first_value(rgdata, "nTBTTurnType", "ntbtturnType", default=0.0))))
+    tbt_main_text = str(self._first_value(rgdata, "szTBTMainText", "tbtMainText", default="") or "").strip()
+    return go_pos_dist > 0.0 or go_pos_time > 0.0 or tbt_dist > 0.0 or tbt_turn_type > 0 or bool(tbt_main_text)
 
   def _normalize_rgdata(self, payload: dict[str, Any], received_at: float) -> dict[str, Any]:
     rgdata = payload.get("rgdata") if isinstance(payload.get("rgdata"), dict) else payload
@@ -261,16 +304,31 @@ class APNBridge:
     latitude = self._float_value(self._first_value(rgdata, "vpPosPointLat", default=0.0))
     longitude = self._float_value(self._first_value(rgdata, "vpPosPointLon", default=0.0))
 
-    speed_limit = self._normalize_speed_limit(self._first_value(rgdata, "nRoadLimitSpeed", "nroadLimitSpeed", default=0))
-    next_speed_limit = self._normalize_speed_limit(self._first_value(rgdata, "nSdiPlusSpeedLimit", "nsdiPlusSpeedLimit", "nSdiSpeedLimit", "nsdiSpeedLimit", default=0))
-    next_speed_distance = self._float_value(self._first_value(rgdata, "nSdiPlusDist", "nsdiPlusDist", "nSdiDist", "nsdiDist", default=0.0))
+    speed_limit = self._normalize_speed_limit(self._first_positive_float(rgdata, "nRoadLimitSpeed", "nroadLimitSpeed", default=0.0))
+    next_speed_limit = self._normalize_speed_limit(
+      self._first_positive_float(rgdata, "nSdiPlusSpeedLimit", "nsdiPlusSpeedLimit", "nSdiSpeedLimit", "nsdiSpeedLimit",
+                                 "nSdiBlockSpeed", "nsdiBlockSpeed", default=0.0)
+    )
+    next_speed_distance = self._first_positive_float(
+      rgdata, "nSdiPlusDist", "nsdiPlusDist", "nSdiDist", "nsdiDist", "nSdiBlockDist", "nsdiBlockDist", default=0.0
+    )
 
     sdi_type = int(round(self._float_value(self._first_value(rgdata, "nSdiType", "nsdiType", default=0))))
+    sdi_plus_type = int(round(self._float_value(self._first_value(rgdata, "nSdiPlusType", "nsdiPlusType", default=0))))
     sdi_section = int(round(self._float_value(self._first_value(rgdata, "nSdiSection", "nsdiSection", default=0))))
-    next_hazard_distance = self._float_value(self._first_value(rgdata, "nSdiDist", "nsdiDist", default=0.0))
+    sdi_block_type = int(round(self._float_value(self._first_value(rgdata, "nSdiBlockType", "nsdiBlockType", default=0))))
+    sdi_block_speed = self._float_value(self._first_value(rgdata, "nSdiBlockSpeed", "nsdiBlockSpeed", default=0.0))
+    sdi_block_dist = self._float_value(self._first_value(rgdata, "nSdiBlockDist", "nsdiBlockDist", default=0.0))
+    sdi_block_section = self._bool_value(self._first_value(rgdata, "bSdiBlockSection", "bsdiBlockSection", default=False))
+    next_hazard_distance = self._first_positive_float(rgdata, "nSdiDist", "nsdiDist", "nSdiBlockDist", "nsdiBlockDist", default=0.0)
+    route_active = self._has_active_route_guidance(rgdata)
 
     timestamp_ms = self._float_value(payload.get("timestamp_ms"), default=0.0)
     timestamp = (timestamp_ms / 1000.0) if timestamp_ms > 0 else received_at
+
+    section_guidance = sdi_block_section or sdi_block_type > 0 or sdi_block_speed > 0.0 or sdi_block_dist > 0.0
+    next_hazard = self._describe_hazard(sdi_type, sdi_plus_type, section_guidance)
+    camera_guidance_active = self._has_camera_guidance(next_hazard, next_hazard_distance, next_speed_limit)
 
     return {
       "kind": "rgdata",
@@ -279,32 +337,43 @@ class APNBridge:
       "roadName": road_name,
       "latitude": latitude,
       "longitude": longitude,
+      "routeActive": route_active,
+      "cameraGuidanceActive": camera_guidance_active,
+      "sectionGuidance": section_guidance,
       "speedLimit": speed_limit,
       "nextSpeedLimit": next_speed_limit,
       "nextSpeedLimitDistance": next_speed_distance if next_speed_limit > 0 else 0.0,
-      "nextHazard": self._describe_hazard(sdi_type, sdi_section),
+      "nextHazard": next_hazard,
       "nextHazardDistance": next_hazard_distance,
       "raw": payload,
     }
 
   def _publish_memory_state(self) -> None:
     now = time.time()
-    fresh = bool(self.last_rgdata_fields) and (now - self.last_rgdata_fields.get("receivedAt", 0.0) < 10.0)
+    fresh = (
+      bool(self.last_rgdata_fields) and
+      (now - self.last_rgdata_fields.get("receivedAt", 0.0) < 10.0)
+    )
     active_payload = self.last_rgdata_fields if fresh else {}
+    route_active = bool(active_payload.get("routeActive", False))
+    expose_speed_limit = route_active
+    expose_camera = fresh
 
     memory_payload = {
       "APNDataActive": fresh,
       "APNDataKind": str(active_payload.get("kind", "")),
-      "APNDataTimestamp": str(active_payload.get("timestamp", 0.0)),
+      # UI freshness should track when we actually received the packet, not the
+      # upstream payload timestamp, which may be stale or omitted in safe mode.
+      "APNDataTimestamp": float(active_payload.get("receivedAt", 0.0)),
       "APNLastRGData": json.dumps(active_payload.get("raw", {}), ensure_ascii=False) if active_payload else "",
-      "APNLatitude": str(active_payload.get("latitude", 0.0)),
-      "APNLongitude": str(active_payload.get("longitude", 0.0)),
-      "APNNextHazard": str(active_payload.get("nextHazard", "")),
-      "APNNextHazardDistance": str(active_payload.get("nextHazardDistance", 0.0)),
-      "APNNextSpeedLimit": str(active_payload.get("nextSpeedLimit", 0.0)),
-      "APNNextSpeedLimitDistance": str(active_payload.get("nextSpeedLimitDistance", 0.0)),
-      "APNRoadName": str(active_payload.get("roadName", "")),
-      "APNSpeedLimit": str(active_payload.get("speedLimit", 0.0)),
+      "APNLatitude": float(active_payload.get("latitude", 0.0)),
+      "APNLongitude": float(active_payload.get("longitude", 0.0)),
+      "APNNextHazard": str(active_payload.get("nextHazard", "")) if expose_camera else "",
+      "APNNextHazardDistance": float(active_payload.get("nextHazardDistance", 0.0)) if expose_camera else 0.0,
+      "APNNextSpeedLimit": float(active_payload.get("nextSpeedLimit", 0.0)) if expose_camera else 0.0,
+      "APNNextSpeedLimitDistance": float(active_payload.get("nextSpeedLimitDistance", 0.0)) if expose_camera else 0.0,
+      "APNRoadName": str(active_payload.get("roadName", "")) if route_active else "",
+      "APNSpeedLimit": float(active_payload.get("speedLimit", 0.0)) if expose_speed_limit else 0.0,
     }
 
     if memory_payload == self.last_memory_payload:
@@ -313,12 +382,16 @@ class APNBridge:
     self.last_memory_payload = memory_payload
     try:
       self.params_memory.put_bool("APNDataActive", memory_payload["APNDataActive"])
-      for key, value in memory_payload.items():
-        if key == "APNDataActive":
-          continue
+    except Exception as exc:
+      print(f"APN memory put failed APNDataActive: {exc}", file=sys.stderr, flush=True)
+
+    for key, value in memory_payload.items():
+      if key == "APNDataActive":
+        continue
+      try:
         self.params_memory.put(key, value)
-    except Exception:
-      pass
+      except Exception as exc:
+        print(f"APN memory put failed {key}: {exc}", file=sys.stderr, flush=True)
 
   def refresh_device_ip(self, force: bool = False) -> str:
     override = os.getenv("APN_DEVICE_IP", "").strip()
@@ -464,7 +537,13 @@ class APNBridge:
       return
 
     live = self.update_messages()
-    carrot_active = (time.time() - self.last_carrot_time) < 10.0
+    carrot_active = (
+      (time.time() - self.last_carrot_time) < 10.0 and
+      bool(
+        self.last_rgdata_fields.get("routeActive", False) or
+        self.last_rgdata_fields.get("cameraGuidanceActive", False)
+      )
+    )
     sdi_distance = 0
     if carrot_active:
       sdi_distance = int(round(self.last_rgdata_fields.get("nextHazardDistance", 0.0)))

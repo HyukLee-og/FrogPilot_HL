@@ -7,6 +7,7 @@ from opendbc.car import Bus, DT_CTRL, create_gas_interceptor_command, structs
 from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.gm import gmcan
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.gm.cluster_speed import gm_cluster_cruise_speed_from_raw_ms, gm_raw_cruise_speed_from_cluster_ms
 from opendbc.car.gm.values import CC_ONLY_CAR, DBC, CanBus, CarControllerParams, CruiseButtons, GMFlags
 from opendbc.car.interfaces import CarControllerBase
 
@@ -30,6 +31,7 @@ FAKE_LONG_PLANNER_HEADROOM_MPH = 1.0
 FAKE_LONG_FAST_INTERVAL_FRAMES = max(1, int(round(0.18 / DT_CTRL)))
 FAKE_LONG_MEDIUM_INTERVAL_FRAMES = max(1, int(round(0.24 / DT_CTRL)))
 FAKE_LONG_SLOW_INTERVAL_FRAMES = max(1, int(round(0.32 / DT_CTRL)))
+FAKE_LONG_PRESS_REPEAT_COUNT = 1
 FAKE_LONG_RELEASE_DELAY_FRAMES = max(1, int(round(0.03 / DT_CTRL)))
 FAKE_LONG_DECEL_TRACK_FACTOR = 1.0
 FAKE_LONG_DECEL_MIN_STEP_MS = 0.25
@@ -44,6 +46,8 @@ FAKE_LONG_SMOOTH_DOWN_KPH_PER_S = 14.0
 FAKE_LONG_SMOOTH_DOWN_MPH_PER_S = 9.0
 FAKE_LONG_TARGET_HYST_KPH = 1.0
 FAKE_LONG_TARGET_HYST_MPH = 1.0
+APN_FAKE_LONG_SHORT_ALERT_DISTANCE_M = 500.0
+APN_FAKE_LONG_LONG_ALERT_DISTANCE_M = 1000.0
 
 
 class CarController(CarControllerBase):
@@ -85,6 +89,24 @@ class CarController(CarControllerBase):
     self.fake_long_last_button = ""
     self.fake_long_debug_cache = ""
     self.fake_long_pending_release = False
+    self.fake_long_pending_press_button = CruiseButtons.INIT
+    self.fake_long_pending_press_repeats = 0
+    self.fake_long_pending_bus_mode = "camera"
+    self.fake_long_pending_hold_until = 0
+    self.fake_long_release_frame = 0
+    self.fake_long_release_idx = 0
+    self.fake_long_apn_decel_started = False
+    self.fake_long_apn_recovery_started = False
+    self.fake_long_apn_restore_pending = False
+    self.fake_long_test_bus_mode = "camera"
+    self.fake_long_test_mode = "tap"
+
+  def clear_fake_long_pending_buttons(self) -> None:
+    self.fake_long_pending_release = False
+    self.fake_long_pending_press_button = CruiseButtons.INIT
+    self.fake_long_pending_press_repeats = 0
+    self.fake_long_pending_bus_mode = "camera"
+    self.fake_long_pending_hold_until = 0
     self.fake_long_release_frame = 0
     self.fake_long_release_idx = 0
 
@@ -95,10 +117,38 @@ class CarController(CarControllerBase):
     self.fake_long_sync_target_until = 0
     self.fake_long_commanded_speed = 0.0
     self.fake_long_prev_v_ego = 0.0
+    self.clear_fake_long_pending_buttons()
+    self.fake_long_apn_decel_started = False
+    self.fake_long_apn_recovery_started = False
+    self.fake_long_apn_restore_pending = False
     if clear_user_set:
       self.fake_long_user_set_speed = 0.0
 
-  def update_fake_long_debug(self, *, active, test_ui, cruise_enabled, cruise_available, current_set_speed, current_v_ego):
+  @staticmethod
+  def _param_float(value, default: float = 0.0) -> float:
+    try:
+      return float(value)
+    except (TypeError, ValueError):
+      return default
+
+  @staticmethod
+  def _display_set_speed(CS) -> float:
+    speed_cluster = float(CS.out.cruiseState.speedCluster)
+    if speed_cluster > 0.0:
+      return speed_cluster
+
+    raw_speed = float(CS.out.cruiseState.speed)
+    if raw_speed > 0.0:
+      return gm_cluster_cruise_speed_from_raw_ms(raw_speed)
+    return raw_speed
+
+  def update_fake_long_debug(self, *, active, test_ui, cruise_enabled, cruise_available, current_set_speed, current_v_ego,
+                             raw_current_set_speed: float | None = None,
+                             apn_enabled: bool = False, apn_override: bool = False, apn_target_speed: float = 0.0,
+                             apn_hazard_distance: float = 0.0, apn_hazard: str = "",
+                             apn_control_active: bool = False, apn_recovery_active: bool = False):
+    current_set_speed = float(current_set_speed)
+    raw_current_set_speed = float(current_set_speed if raw_current_set_speed is None else raw_current_set_speed)
     payload = {
       "active": bool(active),
       "testUI": bool(test_ui),
@@ -108,10 +158,24 @@ class CarController(CarControllerBase):
       "cruiseAvailable": bool(cruise_available),
       "target": round(float(self.fake_long_target_speed), 3),
       "commanded": round(float(self.fake_long_commanded_speed), 3),
-      "set": round(float(current_set_speed), 3),
+      "set": round(current_set_speed, 3),
       "userSet": round(float(self.fake_long_user_set_speed), 3),
       "vEgo": round(float(current_v_ego), 3),
       "last": self.fake_long_last_button,
+      "apnEnabled": bool(apn_enabled),
+      "apnOverride": bool(apn_control_active),
+      "apnOverrideDetected": bool(apn_override),
+      "apnControlActive": bool(apn_control_active),
+      "apnRecoveryActive": bool(apn_recovery_active),
+      "apnTarget": round(float(apn_target_speed), 3),
+      "apnDistance": round(float(apn_hazard_distance), 3),
+      "apnHazard": str(apn_hazard),
+      "rawTarget": round(float(gm_raw_cruise_speed_from_cluster_ms(self.fake_long_target_speed)), 3),
+      "rawCommanded": round(float(gm_raw_cruise_speed_from_cluster_ms(self.fake_long_commanded_speed)), 3),
+      "rawSet": round(raw_current_set_speed, 3),
+      "rawUserSet": round(float(gm_raw_cruise_speed_from_cluster_ms(self.fake_long_user_set_speed)), 3),
+      "testBus": self.fake_long_test_bus_mode,
+      "testMode": self.fake_long_test_mode,
     }
     encoded = json.dumps(payload, separators=(",", ":"))
     if encoded != self.fake_long_debug_cache:
@@ -141,38 +205,93 @@ class CarController(CarControllerBase):
       return FAKE_LONG_MEDIUM_INTERVAL_FRAMES
     return FAKE_LONG_SLOW_INTERVAL_FRAMES
 
-  def create_fake_long_button_command(self, CS, button):
-    return gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, CS.buttons_counter, button)
+  @staticmethod
+  def _normalize_fake_long_bus_mode(bus_mode: str | None) -> str:
+    return "camera"
 
-  def create_fake_long_press_command(self, CS, button):
-    self.fake_long_pending_release = True
-    self.fake_long_release_frame = self.frame + FAKE_LONG_RELEASE_DELAY_FRAMES
-    self.fake_long_release_idx = CS.buttons_counter
-    return gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, CS.buttons_counter, button)
+  def create_fake_long_button_commands(self, idx, button, bus_mode: str = "camera"):
+    return [gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, idx, button)]
 
-  def consume_fake_long_release(self):
-    if not self.fake_long_pending_release or self.frame < self.fake_long_release_frame:
+  def create_fake_long_press_command(self, CS, button, bus_mode: str = "camera",
+                                     repeats: int = FAKE_LONG_PRESS_REPEAT_COUNT,
+                                     release: bool = True, hold_frames: int = 0):
+    press_idx = CS.buttons_counter % 4
+    normalized_bus = self._normalize_fake_long_bus_mode(bus_mode)
+    self.fake_long_pending_press_button = button
+    self.fake_long_pending_press_repeats = max(0, int(repeats) - 1)
+    self.fake_long_pending_release = bool(release)
+    self.fake_long_pending_bus_mode = normalized_bus
+    self.fake_long_pending_hold_until = self.frame + max(0, int(hold_frames))
+    self.fake_long_release_frame = self.frame + max(FAKE_LONG_RELEASE_DELAY_FRAMES, max(0, int(hold_frames)))
+    self.fake_long_release_idx = press_idx
+    self.fake_long_test_bus_mode = normalized_bus
+    self.fake_long_test_mode = "press" if not release else "tap"
+    return self.create_fake_long_button_commands(press_idx, button, normalized_bus)
+
+  def consume_fake_long_press_repeat(self, CS):
+    if self.fake_long_pending_press_repeats <= 0 or self.fake_long_pending_press_button == CruiseButtons.INIT:
+      return None
+
+    self.fake_long_pending_press_repeats -= 1
+    self.last_button_frame = self.frame
+    repeat_idx = CS.buttons_counter % 4
+    self.fake_long_release_frame = self.frame + max(FAKE_LONG_RELEASE_DELAY_FRAMES, 0)
+    self.fake_long_release_idx = repeat_idx
+    return self.create_fake_long_button_commands(repeat_idx, self.fake_long_pending_press_button, self.fake_long_pending_bus_mode)
+
+  def consume_fake_long_release(self, CS):
+    if not self.fake_long_pending_release or self.fake_long_pending_press_repeats > 0:
+      return None
+
+    if self.frame < max(self.fake_long_pending_hold_until, self.fake_long_release_frame):
       return None
 
     self.fake_long_pending_release = False
+    self.fake_long_pending_press_button = CruiseButtons.INIT
+    self.fake_long_pending_hold_until = 0
+    self.fake_long_release_frame = 0
     self.last_button_frame = self.frame
-    return gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, self.fake_long_release_idx, CruiseButtons.UNPRESS)
+    return self.create_fake_long_button_commands(self.fake_long_release_idx, CruiseButtons.UNPRESS, self.fake_long_pending_bus_mode)
 
-  def create_fake_long_command(self, CS, actuators, frogpilot_toggles):
+  def create_fake_long_command(self, CS, actuators, frogpilot_toggles, op_enabled: bool):
+    apn_fake_long_enabled = bool(getattr(frogpilot_toggles, "apn_fake_long", False))
+    apn_fake_long_offset = float(getattr(frogpilot_toggles, "apn_fake_long_offset", 0.0) or 0.0)
     fake_long_enabled = bool(getattr(frogpilot_toggles, "fake_long", False))
     test_ui_enabled = bool(getattr(frogpilot_toggles, "fake_long_test_ui", False))
     stock_acc_path = self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl and self.CP.networkLocation == NetworkLocation.fwdCamera
+    # Keep the web/onroad button experiment path isolated from the main
+    # fake-long/APN controller so test presses don't inherit controller state.
+    fake_long_controller_enabled = fake_long_enabled or apn_fake_long_enabled
 
-    if not (fake_long_enabled and stock_acc_path):
+    if not (fake_long_controller_enabled and stock_acc_path):
       self.reset_fake_long(clear_user_set=True)
       self.update_fake_long_debug(active=False, test_ui=test_ui_enabled, cruise_enabled=CS.out.cruiseState.enabled,
-                                  cruise_available=CS.out.cruiseState.available, current_set_speed=float(CS.out.cruiseState.speed),
-                                  current_v_ego=float(CS.out.vEgo))
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=self._display_set_speed(CS),
+                                  current_v_ego=float(CS.out.vEgo), raw_current_set_speed=float(CS.out.cruiseState.speed))
       return None
 
     cruise_enabled = CS.out.cruiseState.enabled
-    current_set_speed = float(CS.out.cruiseState.speed)
+    current_set_speed_raw = float(CS.out.cruiseState.speed)
+    current_set_speed = self._display_set_speed(CS)
     current_v_ego = float(CS.out.vEgo)
+    apn_override_active = False
+    apn_hazard_distance = 0.0
+    apn_hazard_kind = ""
+    apn_target_speed = 0.0
+    apn_control_active = False
+    apn_recovery_active = False
+
+    if not op_enabled:
+      self.fake_long_prev_cruise_enabled = False
+      self.reset_fake_long(clear_user_set=False)
+      if current_set_speed > 0.0:
+        self.fake_long_user_set_speed = current_set_speed
+      self.apply_speed = current_set_speed
+      self.update_fake_long_debug(active=False, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
+                                  cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
+                                  current_v_ego=current_v_ego, raw_current_set_speed=current_set_speed_raw,
+                                  apn_enabled=apn_fake_long_enabled)
+      return None
 
     if not cruise_enabled:
       self.fake_long_prev_cruise_enabled = False
@@ -180,13 +299,15 @@ class CarController(CarControllerBase):
       self.apply_speed = current_set_speed
       self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
                                   cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
-                                  current_v_ego=current_v_ego)
+                                  current_v_ego=current_v_ego, raw_current_set_speed=current_set_speed_raw,
+                                  apn_enabled=apn_fake_long_enabled)
       return None
 
     if current_v_ego < FAKE_LONG_MIN_SEND_SPEED_MS:
       self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
                                   cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
-                                  current_v_ego=current_v_ego)
+                                  current_v_ego=current_v_ego, raw_current_set_speed=current_set_speed_raw,
+                                  apn_enabled=apn_fake_long_enabled)
       return None
 
     if not self.fake_long_session_armed:
@@ -194,7 +315,8 @@ class CarController(CarControllerBase):
       self.apply_speed = current_set_speed
       self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
                                   cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
-                                  current_v_ego=current_v_ego)
+                                  current_v_ego=current_v_ego, raw_current_set_speed=current_set_speed_raw,
+                                  apn_enabled=apn_fake_long_enabled)
       return None
 
     is_metric = bool(getattr(frogpilot_toggles, "is_metric", True))
@@ -231,20 +353,47 @@ class CarController(CarControllerBase):
 
     if manual_override and self.frame > self.fake_long_ignore_button_until:
       self.fake_long_pause_until = self.frame + FAKE_LONG_PAUSE_FRAMES
+      self.fake_long_apn_decel_started = False
+      self.fake_long_apn_recovery_started = False
+      self.fake_long_apn_restore_pending = False
 
     self.fake_long_prev_cruise_enabled = True
 
     stored_user_set_speed = max(FAKE_LONG_MIN_SET_SPEED_MS, self.fake_long_user_set_speed if self.fake_long_user_set_speed > 0.0 else current_set_speed)
 
-    if planner_speed > 0.0:
-      raw_desired_set_speed = max(FAKE_LONG_MIN_SET_SPEED_MS, min(stored_user_set_speed, planner_speed + planner_headroom))
+    if apn_fake_long_enabled and self.params_memory.get_bool("APNDataActive"):
+      apn_hazard_kind = str(self.params_memory.get("APNNextHazard", return_default=True) or "")
+      apn_hazard_distance = self._param_float(self.params_memory.get("APNNextHazardDistance", return_default=True))
+      apn_target_speed = self._param_float(self.params_memory.get("APNNextSpeedLimit", return_default=True))
+      if apn_target_speed <= 0.1:
+        apn_target_speed = self._param_float(self.params_memory.get("APNSpeedLimit", return_default=True))
+      if apn_target_speed > 0.1:
+        apn_target_speed = max(FAKE_LONG_MIN_SET_SPEED_MS, apn_target_speed + apn_fake_long_offset)
+
+      apn_camera_alert_distance = APN_FAKE_LONG_LONG_ALERT_DISTANCE_M if (apn_target_speed * CV.MS_TO_KPH) >= 80.0 else APN_FAKE_LONG_SHORT_ALERT_DISTANCE_M
+      apn_override_active = "camera" in apn_hazard_kind and apn_hazard_distance > 0.0 and apn_hazard_distance <= apn_camera_alert_distance and apn_target_speed > 0.1
+      apn_override_active &= stored_user_set_speed > (apn_target_speed + speed_hysteresis)
+
+    if not apn_override_active:
+      self.fake_long_apn_decel_started = False
+    else:
+      self.fake_long_apn_recovery_started = False
+
+    if fake_long_enabled:
+      if planner_speed > 0.0:
+        raw_desired_set_speed = max(FAKE_LONG_MIN_SET_SPEED_MS, min(stored_user_set_speed, planner_speed + planner_headroom))
+      else:
+        raw_desired_set_speed = stored_user_set_speed
+
+      if current_v_ego + speed_hysteresis < stored_user_set_speed:
+        raw_desired_set_speed = min(raw_desired_set_speed, max(FAKE_LONG_MIN_SET_SPEED_MS, current_v_ego))
+      elif raw_desired_set_speed < current_set_speed:
+        raw_desired_set_speed = min(raw_desired_set_speed, max(FAKE_LONG_MIN_SET_SPEED_MS, current_v_ego + follow_headroom))
     else:
       raw_desired_set_speed = stored_user_set_speed
 
-    if current_v_ego + speed_hysteresis < stored_user_set_speed:
-      raw_desired_set_speed = min(raw_desired_set_speed, max(FAKE_LONG_MIN_SET_SPEED_MS, current_v_ego))
-    elif raw_desired_set_speed < current_set_speed:
-      raw_desired_set_speed = min(raw_desired_set_speed, max(FAKE_LONG_MIN_SET_SPEED_MS, current_v_ego + follow_headroom))
+    if apn_override_active:
+      raw_desired_set_speed = min(raw_desired_set_speed, apn_target_speed)
 
     actual_speed_drop = max(0.0, self.fake_long_prev_v_ego - current_v_ego)
     self.fake_long_prev_v_ego = current_v_ego
@@ -262,11 +411,16 @@ class CarController(CarControllerBase):
     desired_set_speed = self.fake_long_commanded_speed
 
     self.apply_speed = desired_set_speed
+    apn_recovery_active = apn_fake_long_enabled and self.fake_long_apn_recovery_started and self.fake_long_apn_restore_pending and not apn_override_active
+    apn_control_active = apn_fake_long_enabled and self.fake_long_apn_decel_started and apn_override_active
 
     if self.frame < self.fake_long_pause_until:
       self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
                                   cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
-                                  current_v_ego=current_v_ego)
+                                  current_v_ego=current_v_ego, raw_current_set_speed=current_set_speed_raw,
+                                  apn_enabled=apn_fake_long_enabled, apn_override=apn_override_active,
+                                  apn_target_speed=apn_target_speed, apn_hazard_distance=apn_hazard_distance, apn_hazard=apn_hazard_kind,
+                                  apn_control_active=apn_control_active, apn_recovery_active=apn_recovery_active)
       return None
 
     button = CruiseButtons.INIT
@@ -282,60 +436,119 @@ class CarController(CarControllerBase):
       self.last_button_frame = self.frame
       self.fake_long_ignore_button_until = self.frame + FAKE_LONG_IGNORE_ECHO_FRAMES
       self.fake_long_last_button = "set" if button == CruiseButtons.DECEL_SET else "res"
+      if apn_override_active and button == CruiseButtons.DECEL_SET:
+        self.fake_long_apn_decel_started = True
+        self.fake_long_apn_recovery_started = False
+        self.fake_long_apn_restore_pending = True
+      elif apn_fake_long_enabled and self.fake_long_apn_restore_pending and not apn_override_active and button == CruiseButtons.RES_ACCEL:
+        self.fake_long_apn_recovery_started = True
+
+      apn_control_active = apn_fake_long_enabled and self.fake_long_apn_decel_started and apn_override_active
+      apn_recovery_active = apn_fake_long_enabled and self.fake_long_apn_recovery_started and self.fake_long_apn_restore_pending and not apn_override_active
       self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
                                   cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
-                                  current_v_ego=current_v_ego)
+                                  current_v_ego=current_v_ego, raw_current_set_speed=current_set_speed_raw,
+                                  apn_enabled=apn_fake_long_enabled, apn_override=apn_override_active,
+                                  apn_target_speed=apn_target_speed, apn_hazard_distance=apn_hazard_distance, apn_hazard=apn_hazard_kind,
+                                  apn_control_active=apn_control_active, apn_recovery_active=apn_recovery_active)
       return self.create_fake_long_press_command(CS, button)
+
+    if apn_fake_long_enabled and apn_recovery_active and current_set_speed >= stored_user_set_speed - speed_hysteresis:
+      self.fake_long_apn_recovery_started = False
+      self.fake_long_apn_restore_pending = False
+      apn_recovery_active = False
 
     self.update_fake_long_debug(active=True, test_ui=test_ui_enabled, cruise_enabled=cruise_enabled,
                                 cruise_available=CS.out.cruiseState.available, current_set_speed=current_set_speed,
-                                current_v_ego=current_v_ego)
+                                current_v_ego=current_v_ego, raw_current_set_speed=current_set_speed_raw,
+                                apn_enabled=apn_fake_long_enabled, apn_override=apn_override_active,
+                                apn_target_speed=apn_target_speed, apn_hazard_distance=apn_hazard_distance, apn_hazard=apn_hazard_kind,
+                                apn_control_active=apn_control_active, apn_recovery_active=apn_recovery_active)
     return None
 
   def consume_fake_long_test_button(self, CS, frogpilot_toggles):
     test_ui_enabled = bool(getattr(frogpilot_toggles, "fake_long_test_ui", False))
     stock_acc_path = self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl and self.CP.networkLocation == NetworkLocation.fwdCamera
-
     if not (test_ui_enabled and stock_acc_path):
       return None
 
-    button_payload = self.params_memory.get("FakeLongTestButton")
-    if not button_payload:
+    raw_value = self.params_memory.get("FakeLongTestButton")
+    if not raw_value:
       return None
+
+    raw_text = raw_value if isinstance(raw_value, str) else raw_value.decode("utf-8", errors="ignore")
+    raw_text = raw_text.strip()
+    if not raw_text:
+      return None
+
+    payload = None
+    try:
+      parsed = json.loads(raw_text)
+      if isinstance(parsed, dict):
+        payload = parsed
+    except Exception:
+      payload = None
+
+    legacy_button_key = ""
+    legacy_timestamp_ms = 0.0
+    if payload is None:
+      button_key, sep, button_ts = raw_text.partition(":")
+      if not sep:
+        return None
+      legacy_button_key = button_key.strip().lower()
+      legacy_timestamp_ms = self._param_float(button_ts, 0.0)
 
     self.params_memory.remove("FakeLongTestButton")
 
-    try:
-      button_key, button_ts = button_payload.split(":", 1)
-      button_age = time.time() - (int(button_ts) / 1000.0)
-    except (TypeError, ValueError):
-      return None
+    if payload is not None:
+      sent_at_ms = self._param_float(payload.get("sentAtMs"), 0.0)
+      button_key = str(payload.get("button", "")).strip().lower()
+      mode = str(payload.get("mode", "tap")).strip().lower()
+      repeats = int(max(1, min(12, self._param_float(payload.get("repeats"), FAKE_LONG_PRESS_REPEAT_COUNT))))
+      hold_frames = int(max(0, min(40, self._param_float(payload.get("holdFrames"), 0))))
+    else:
+      sent_at_ms = legacy_timestamp_ms
+      button_key = legacy_button_key
+      mode = "tap"
+      repeats = FAKE_LONG_PRESS_REPEAT_COUNT
+      hold_frames = 0
 
-    if button_age < 0 or button_age > FAKE_LONG_TEST_BUTTON_MAX_AGE_S:
-      return None
-
-    button_lookup = {
-      "main": CruiseButtons.MAIN,
-      "cancel": CruiseButtons.CANCEL,
-      "res": CruiseButtons.RES_ACCEL,
-      "set": CruiseButtons.DECEL_SET,
-    }
-    button = button_lookup.get(button_key)
-    if button is None:
+    if sent_at_ms > 0.0 and (time.time() - (sent_at_ms / 1000.0)) > FAKE_LONG_TEST_BUTTON_MAX_AGE_S:
       return None
 
     if float(CS.out.vEgo) < FAKE_LONG_MIN_SEND_SPEED_MS:
       return None
 
-    self.last_button_frame = self.frame
-    self.fake_long_ignore_button_until = self.frame + FAKE_LONG_IGNORE_ECHO_FRAMES
+    bus_mode = self._normalize_fake_long_bus_mode("camera")
+
+    button_map = {
+      "main": CruiseButtons.MAIN,
+      "cancel": CruiseButtons.CANCEL,
+      "res": CruiseButtons.RES_ACCEL,
+      "set": CruiseButtons.DECEL_SET,
+      "unpress": CruiseButtons.UNPRESS,
+    }
+    button = button_map.get(button_key, CruiseButtons.INIT)
+    if button == CruiseButtons.INIT:
+      return None
+
+    # Treat test buttons as their own isolated path. Clear any pending repeat
+    # or release from previous test/controller commands before queueing a new one.
+    self.clear_fake_long_pending_buttons()
     self.fake_long_pause_until = self.frame + FAKE_LONG_PAUSE_FRAMES
+    self.fake_long_ignore_button_until = self.frame + FAKE_LONG_IGNORE_ECHO_FRAMES
     self.fake_long_sync_target_until = self.frame + FAKE_LONG_PAUSE_FRAMES
+    self.fake_long_test_bus_mode = bus_mode
+    self.fake_long_test_mode = mode
     self.fake_long_last_button = button_key
-    self.update_fake_long_debug(active=bool(getattr(frogpilot_toggles, "fake_long", False)), test_ui=test_ui_enabled,
-                                cruise_enabled=CS.out.cruiseState.enabled, cruise_available=CS.out.cruiseState.available,
-                                current_set_speed=float(CS.out.cruiseState.speed), current_v_ego=float(CS.out.vEgo))
-    return self.create_fake_long_press_command(CS, button)
+    self.last_button_frame = self.frame
+
+    if button == CruiseButtons.UNPRESS or mode == "release":
+      return self.create_fake_long_button_commands((CS.buttons_counter + 1) % 4, CruiseButtons.UNPRESS, bus_mode)
+
+    return self.create_fake_long_press_command(CS, button, bus_mode=bus_mode,
+                                               repeats=repeats, release=(mode != "press"),
+                                               hold_frames=hold_frames)
 
   # OPGM variables
   @staticmethod
@@ -490,20 +703,25 @@ class CarController(CarControllerBase):
       # Stock longitudinal, integrated at camera
       if (self.frame - self.last_button_frame) * DT_CTRL > 0.04:
         self.update_fake_long_session_state(CS)
-        fake_long_release_send = self.consume_fake_long_release()
-        if fake_long_release_send is not None:
-          can_sends.append(fake_long_release_send)
-        elif self.cancel_counter > CAMERA_CANCEL_DELAY_FRAMES:
-          self.last_button_frame = self.frame
-          can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, CS.buttons_counter, CruiseButtons.CANCEL))
+        fake_long_press_repeat_send = self.consume_fake_long_press_repeat(CS)
+        if fake_long_press_repeat_send is not None:
+          can_sends.extend(fake_long_press_repeat_send)
         else:
-          fake_long_test_send = self.consume_fake_long_test_button(CS, frogpilot_toggles)
-          if fake_long_test_send is not None:
-            can_sends.append(fake_long_test_send)
+          fake_long_release_send = self.consume_fake_long_release(CS)
+          if fake_long_release_send is not None:
+            can_sends.extend(fake_long_release_send)
           else:
-            fake_long_send = self.create_fake_long_command(CS, actuators, frogpilot_toggles)
-            if fake_long_send is not None:
-              can_sends.append(fake_long_send)
+            if self.cancel_counter > CAMERA_CANCEL_DELAY_FRAMES:
+              self.last_button_frame = self.frame
+              can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.CAMERA, CS.buttons_counter, CruiseButtons.CANCEL))
+            else:
+              fake_long_test_send = self.consume_fake_long_test_button(CS, frogpilot_toggles)
+              if fake_long_test_send is not None:
+                can_sends.extend(fake_long_test_send)
+              else:
+                fake_long_send = self.create_fake_long_command(CS, actuators, frogpilot_toggles, CC.enabled)
+                if fake_long_send is not None:
+                  can_sends.extend(fake_long_send)
 
     if self.CP.networkLocation == NetworkLocation.fwdCamera:
       # Silence "Take Steering" alert sent by camera, forward PSCMStatus with HandsOffSWlDetectionStatus=1

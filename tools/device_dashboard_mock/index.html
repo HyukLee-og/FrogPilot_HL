@@ -4,29 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FrogPilot Device Console</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260331b" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">LIVE PARAMS CONSOLE</p>
-          <h1>FrogPilot Device Console</h1>
-          <p class="subtitle">
-            상태 탭에서는 기기 상태, openpilot 상태, 차량 정보를 보고, 설정 탭에서는 전체 Params를
-            편집하고, 통계 탭에서는 FrogPilot 통계를 한글로 확인하고, 조회 탭에서는 기기 로그를 볼 수
-            있습니다.
-          </p>
-        </div>
-        <div class="topbar-actions">
-          <div id="connectionCard" class="connection-card">
-            <span id="connectionDot" class="dot live"></span>
-            <div>
-              <strong id="connectionLabel">Local Params Backend</strong>
-              <p id="deviceLabel">testing-v1 · prefix d</p>
+        <div class="topbar-title">
+          <div class="topbar-title-row">
+            <h1>Openpilot Console</h1>
+            <div id="connectionCard" class="connection-card">
+              <span id="connectionDot" class="dot live"></span>
+              <div class="connection-copy">
+                <strong id="connectionLabel">연결됨</strong>
+                <span id="deviceLabel" class="sr-only">testing-v1 · prefix d</span>
+              </div>
             </div>
           </div>
-          <button id="refreshButton" class="action-button action-button-primary">전체 새로고침</button>
+        </div>
+        <div class="topbar-actions">
+          <button id="refreshButton" class="action-button action-button-primary">새로고침</button>
         </div>
       </header>
 
@@ -34,6 +30,7 @@
         <button class="tab-button active" data-tab="status">상태</button>
         <button class="tab-button" data-tab="settings">설정</button>
         <button class="tab-button" data-tab="stats">통계</button>
+        <button class="tab-button" data-tab="debug">디버그</button>
         <button class="tab-button" data-tab="query">조회</button>
       </nav>
 
@@ -78,6 +75,20 @@
           </article>
         </section>
 
+        <section class="panel panel-status-toggle">
+          <div class="panel-header panel-header-inline">
+            <div>
+              <p class="panel-kicker">STATUS DETAILS</p>
+              <h3>상세 상태</h3>
+            </div>
+            <div class="panel-actions">
+              <span id="statusDetailsCaption" class="panel-caption">상단 핵심 정보만 표시 중</span>
+              <button id="toggleStatusDetailsButton" class="action-button">더보기</button>
+            </div>
+          </div>
+        </section>
+
+        <div id="statusDetailsWrap" class="status-details-wrap is-collapsed">
         <section class="status-grid">
           <section class="panel">
             <div class="panel-header">
@@ -124,8 +135,45 @@
               </div>
               <pre id="apnDebugViewer" class="log-viewer log-viewer-compact"></pre>
             </div>
+            <div class="timeline-card compact-json-card">
+              <div class="timeline-header">
+                <h4>SDI 임시 라벨</h4>
+                <span id="apnLabelSubtitle" class="panel-caption">현재 SDI 시그니처 기준</span>
+              </div>
+              <div class="apn-label-grid">
+                <div class="apn-label-meta-card">
+                  <span>현재 시그니처</span>
+                  <code id="apnSignatureValue">-</code>
+                </div>
+                <div class="apn-label-meta-card">
+                  <span>현재 라벨</span>
+                  <strong id="apnCurrentLabelValue">-</strong>
+                </div>
+              </div>
+              <div class="apn-label-form">
+                <input id="apnLabelInput" class="param-input" type="text" placeholder="예: 신호과속 추정, 일반 고정식 등" />
+                <button id="saveApnLabelButton" class="action-button action-button-primary">라벨 저장</button>
+                <button id="deleteApnLabelButton" class="action-button">현재 라벨 삭제</button>
+              </div>
+              <div id="apnLabelList" class="apn-label-list"></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">BUTTON SNIFF</p>
+                <h3>CAN / 차량 상태 임시 라벨</h3>
+              </div>
+              <div class="panel-actions">
+                <span id="canDebugSubtitle" class="panel-caption">모니터링 꺼짐</span>
+                <button id="toggleCanMonitorButton" class="action-button">모니터링 시작</button>
+              </div>
+            </div>
+            <div id="canSignalList" class="can-signal-list"></div>
           </section>
         </section>
+        </div>
       </section>
 
       <section class="tab-panel" data-panel="settings">
@@ -236,7 +284,7 @@
 
       <section class="tab-panel" data-panel="stats">
         <section class="stats-hero-grid">
-          <article class="hero-card hero-card-primary">
+          <article class="hero-card hero-card-primary stats-hero-primary">
             <div class="hero-label">FROGPILOT STATS</div>
             <div class="hero-main hero-main-status">
               <div>
@@ -248,32 +296,46 @@
                 <span id="statsUpdatedChip" class="pill neutral">-</span>
               </div>
             </div>
-          </article>
-
-          <article class="hero-card">
-            <div class="hero-label">Overview</div>
-            <div class="speed-cluster">
-              <div>
+            <div class="stats-kpi-row">
+              <div class="stats-kpi-card">
                 <span>총 주행 횟수</span>
                 <strong id="statsSummaryDrives">-</strong>
               </div>
-              <div>
+              <div class="stats-kpi-card">
                 <span>총 주행 거리</span>
                 <strong id="statsSummaryDistance">-</strong>
               </div>
-              <div>
+              <div class="stats-kpi-card">
                 <span>총 주행 시간</span>
                 <strong id="statsSummaryTime">-</strong>
               </div>
             </div>
           </article>
+
+          <article class="hero-card stats-insight-card">
+            <div class="hero-label">Pulse</div>
+            <div class="stats-insight-stack">
+              <div class="stats-insight-block">
+                <span id="statsPulsePrimaryLabel">총 활성화</span>
+                <strong id="statsPulsePrimaryValue">-</strong>
+              </div>
+              <div class="stats-insight-block">
+                <span id="statsPulseSecondaryLabel">긴급 제동 경고</span>
+                <strong id="statsPulseSecondaryValue">-</strong>
+              </div>
+              <div class="stats-insight-note">
+                <span id="statsPulseNoteLabel">Overview</span>
+                <p id="statsHeroFocus">통계 데이터를 불러오는 중...</p>
+              </div>
+            </div>
+          </article>
         </section>
 
-        <section class="panel">
+        <section class="panel stats-summary-panel">
           <div class="panel-header">
             <div>
               <p class="panel-kicker">SUMMARY</p>
-              <h3>주요 통계</h3>
+              <h3>핵심 신호</h3>
             </div>
             <span class="panel-caption" id="statsSummaryCaption">통계를 불러오는 중...</span>
           </div>
@@ -282,6 +344,163 @@
         </section>
 
         <section class="stats-section-grid" id="statsSectionGrid"></section>
+      </section>
+
+      <section class="tab-panel" data-panel="debug">
+        <section class="hero-grid">
+          <article class="hero-card hero-card-primary">
+            <div class="hero-label">FAKE-LONG DEBUG</div>
+            <div class="hero-main hero-main-status">
+              <div>
+                <h2 id="debugTitle">버튼 실험 콘솔</h2>
+                <p id="debugSubtitle">웹에서 fake-long 버튼 조합을 직접 전송합니다.</p>
+                <p id="debugSafetyHint" class="debug-safety-hint is-neutral">디버그 상태를 불러오는 중...</p>
+              </div>
+              <div class="pill-row">
+                <span id="debugOnroadChip" class="pill neutral">OFFROAD</span>
+                <span id="debugCruiseChip" class="pill neutral">CRUISE OFF</span>
+                <span id="debugSafetyChip" class="pill neutral">SAFETY 0</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="hero-card">
+            <div class="hero-label">Runtime</div>
+            <div class="metric-stack">
+              <div class="metric-line">
+                <span>차량 속도</span>
+                <strong id="debugVehicleSpeedValue">-</strong>
+              </div>
+              <div class="metric-line">
+                <span>ACC 속도</span>
+                <strong id="debugAccSpeedValue">-</strong>
+              </div>
+              <div class="metric-line">
+                <span>최근 버튼</span>
+                <strong id="debugLastButtonValue">-</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="hero-card">
+            <div class="hero-label">Flags</div>
+            <div class="metric-stack">
+              <div class="metric-line">
+                <span>Fake-Long</span>
+                <strong id="debugFakeLongFlagValue">-</strong>
+              </div>
+              <div class="metric-line">
+                <span>Test UI</span>
+                <strong id="debugFakeLongTestUIValue">-</strong>
+              </div>
+              <div class="metric-line">
+                <span>APN Fake-Long</span>
+                <strong id="debugApnFakeLongValue">-</strong>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">COMMAND OPTIONS</p>
+              <h3>전송 옵션</h3>
+            </div>
+            <div class="panel-actions">
+              <span id="debugPollingStatus" class="panel-caption">수동 갱신 모드</span>
+              <button id="refreshDebugButton" class="action-button">디버그 새로고침</button>
+              <button id="toggleDebugMonitorButton" class="action-button">실시간 보기 켜기</button>
+            </div>
+          </div>
+
+          <p id="debugCommandSubtitle" class="panel-caption">현재 선택된 조합으로 아래 버튼을 전송합니다.</p>
+
+          <div class="param-toolbar debug-config-grid">
+            <select id="debugBusMode" class="param-select" disabled>
+              <option value="camera" selected>카메라 송신 전용</option>
+            </select>
+            <select id="debugActionMode" class="param-select">
+              <option value="tap">눌렀다 떼기</option>
+              <option value="press">누르기만</option>
+              <option value="release">떼기만</option>
+            </select>
+            <select id="debugRepeatCount" class="param-select">
+              <option value="1" selected>1회</option>
+              <option value="2">2회</option>
+              <option value="4">4회</option>
+              <option value="6">6회</option>
+              <option value="8">8회</option>
+            </select>
+            <select id="debugHoldFrames" class="param-select">
+              <option value="0" selected>즉시 떼기</option>
+              <option value="2">짧게 유지</option>
+              <option value="4">보통 유지</option>
+              <option value="8">길게 유지</option>
+              <option value="12">아주 길게 유지</option>
+            </select>
+          </div>
+
+          <div class="sim-actions debug-preset-grid">
+            <button class="action-button debug-preset-button" data-preset-mode="tap" data-preset-repeats="1" data-preset-hold="0">CAM 탭</button>
+            <button class="action-button debug-preset-button" data-preset-mode="tap" data-preset-repeats="2" data-preset-hold="0">CAM 2회</button>
+            <button class="action-button debug-preset-button" data-preset-mode="press" data-preset-repeats="1" data-preset-hold="8">CAM 홀드</button>
+            <button class="action-button debug-preset-button" data-preset-mode="release" data-preset-repeats="1" data-preset-hold="0">CAM 떼기</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">BUTTON PAD</p>
+              <h3>버튼 전송</h3>
+            </div>
+            <span id="debugSendStatus" class="panel-caption">전송 대기 중</span>
+          </div>
+
+          <div class="debug-command-grid">
+            <button id="debugButtonMain" class="action-button action-button-primary debug-command-button">MAIN</button>
+            <button id="debugButtonCancel" class="action-button debug-command-button">CANCEL</button>
+            <button id="debugButtonRes" class="action-button debug-command-button">RES</button>
+            <button id="debugButtonSet" class="action-button debug-command-button">SET</button>
+            <button id="debugButtonUnpress" class="action-button debug-command-button debug-command-button-muted">UNPRESS</button>
+          </div>
+        </section>
+
+        <section class="status-grid">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">RUNTIME</p>
+                <h3>실시간 상태</h3>
+              </div>
+            </div>
+            <div id="debugInfoGrid" class="info-card-grid"></div>
+            <div class="timeline-card compact-json-card">
+              <div class="timeline-header">
+                <h4>최근 웹 전송</h4>
+                <span id="debugPendingSubtitle" class="panel-caption">마지막 요청 payload</span>
+              </div>
+              <pre id="debugPendingViewer" class="log-viewer log-viewer-compact"></pre>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">FAKE-LONG DEBUG</p>
+                <h3>원시 디버그</h3>
+              </div>
+            </div>
+            <div class="timeline-card compact-json-card">
+              <div class="timeline-header">
+                <h4>FakeLongDebug</h4>
+                <span id="debugViewerSubtitle" class="panel-caption">memory param</span>
+              </div>
+              <pre id="debugFakeLongViewer" class="log-viewer log-viewer-compact"></pre>
+            </div>
+          </section>
+        </section>
       </section>
 
       <section class="tab-panel" data-panel="query">
@@ -346,6 +565,6 @@
       </section>
     </div>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260331b"></script>
   </body>
 </html>

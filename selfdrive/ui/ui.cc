@@ -20,7 +20,7 @@ constexpr float AUTO_BRIGHTNESS_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_MAX = 100.0f;
 constexpr float AUTO_BRIGHTNESS_EXPOSURE_GAMMA = 0.8f;
 constexpr float AUTO_BRIGHTNESS_DIM_FLOOR = 10.0f;
-constexpr float AUTO_BRIGHTNESS_DARK_THRESHOLD = 4.0f;
+constexpr float AUTO_BRIGHTNESS_DARK_THRESHOLD = 2.0f;
 constexpr double STARTED_FALL_DEBOUNCE_S = 5.0;
 
 static void update_sockets(UIState *s) {
@@ -236,17 +236,11 @@ void Device::updateBrightness(const UIState &s, const FrogPilotUIState &fs) {
   float clipped_brightness = offroad_brightness;
   if (s.scene.started && s.scene.light_sensor >= 0) {
     const float raw_light_sensor = s.scene.light_sensor;
-    clipped_brightness = raw_light_sensor;
-
-    // CIE 1931 - https://www.photonstophotos.net/GeneralTopics/Exposure/Psychometric_Lightness_and_Gamma.htm
-    if (clipped_brightness <= 8) {
-      clipped_brightness = (clipped_brightness / 903.3);
-    } else {
-      clipped_brightness = std::pow((clipped_brightness + 16.0) / 116.0, 3.0);
-    }
-
     const float auto_brightness_min = raw_light_sensor > AUTO_BRIGHTNESS_DARK_THRESHOLD ? AUTO_BRIGHTNESS_DIM_FLOOR : AUTO_BRIGHTNESS_MIN;
-    clipped_brightness = std::clamp(100.0f * clipped_brightness, auto_brightness_min, AUTO_BRIGHTNESS_MAX);
+    // scene.light_sensor is already a non-linear brightness estimate derived
+    // from camera exposure, so applying another CIE transform crushes dusk and
+    // street-lit scenes down to the dim floor too aggressively.
+    clipped_brightness = std::clamp(raw_light_sensor, auto_brightness_min, AUTO_BRIGHTNESS_MAX);
   }
 
   int brightness = brightness_filter.update(clipped_brightness);

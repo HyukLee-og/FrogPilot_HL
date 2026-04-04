@@ -195,7 +195,7 @@ class CarInterfaceBase(ABC):
       elif platform in GM:
         fp_ret.canUsePedal = True
         stock_acc_fake_long_path = CP.pcmCruise and not CP.openpilotLongitudinalControl and CP.networkLocation == structs.CarParams.NetworkLocation.fwdCamera
-        if stock_acc_fake_long_path and (getattr(frogpilot_toggles, "fake_long", False) or getattr(frogpilot_toggles, "fake_long_test_ui", False)):
+        if stock_acc_fake_long_path and (getattr(frogpilot_toggles, "fake_long", False) or getattr(frogpilot_toggles, "fake_long_test_ui", False) or getattr(frogpilot_toggles, "apn_fake_long", False)):
           fp_ret.safetyConfigs[-1].safetyParam |= GMSafetyFlags.FLAG_GM_FAKE_LONG_BUTTONS.value
 
       elif platform in HONDA:

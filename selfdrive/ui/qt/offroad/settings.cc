@@ -224,6 +224,9 @@ void TogglesPanel::updateToggles() {
 }
 
 MorePanel::MorePanel(SettingsWindow *parent) : ListWidget(parent) {
+  Params params;
+  const bool is_metric = params.getBool("IsMetric");
+
   auto apn_toggle = new ParamControl(
     "UseAPN",
     tr("APN 사용"),
@@ -232,6 +235,54 @@ MorePanel::MorePanel(SettingsWindow *parent) : ListWidget(parent) {
     this
   );
   addItem(apn_toggle);
+
+  auto apn_fake_long_toggle = new ParamControl(
+    "APNFakeLong",
+    tr("APN-Fake-Long"),
+    tr("<b>APN 카메라 제한속도와 Fake-Long 버튼 제어를 연동합니다.</b> 켜면 ACC 설정속도가 APN 카메라 제한속도보다 높을 때 버튼 스니핑으로 감속하고, 카메라를 지나면 원래 사용자 ACC 속도로 복귀합니다."),
+    "../assets/icons/speed_limit.png",
+    this
+  );
+  addItem(apn_fake_long_toggle);
+
+  auto apn_fake_long_offset = new FrogPilotParamValueControl(
+    "APNFakeLongOffset",
+    tr("APN-Fake-Long 오프셋"),
+    tr("<b>APN-Fake-Long 목표속도에 더할 오프셋입니다.</b> 음수면 카메라 제한속도보다 더 낮게 맞추고, 양수면 더 높게 맞춥니다."),
+    "../assets/icons/speed_limit.png",
+    -10,
+    10,
+    is_metric ? tr(" km/h") : tr(" mph")
+  );
+  apn_fake_long_offset->setVisible(params.getBool("APNFakeLong"));
+  QObject::connect(apn_fake_long_toggle, &ParamControl::toggleFlipped, [apn_fake_long_offset](bool enabled) {
+    apn_fake_long_offset->setVisible(enabled);
+  });
+  addItem(apn_fake_long_offset);
+
+  addItem(new ParamControl(
+    "FakeLong",
+    tr("Fake-Long"),
+    tr("<b>Use stock ACC button inputs to ramp the set speed more gently.</b> Intended for GM vehicles using stock ACC instead of openpilot longitudinal control."),
+    "../assets/icons/speed_limit.png",
+    this
+  ));
+
+  addItem(new ParamControl(
+    "FakeLongTestUI",
+    tr("Fake-Long Test UI"),
+    tr("<b>Show the fake-long button sniffing test UI.</b> Intended for development and validation while tuning stock ACC button automation."),
+    "../assets/icons/driver_camera.png",
+    this
+  ));
+
+  addItem(new ParamControl(
+    "IgnoreSeatbeltUnlatched",
+    tr("안전벨트 착용 여부 미확인"),
+    tr("<b>안전벨트를 매지 않아도 openpilot 인게이지를 허용합니다.</b> 개발/특수 용도 전용입니다. 안전 관련 경고를 우회하므로 실제 도로 사용에 주의하세요."),
+    "../assets/icons/warning.png",
+    this
+  ));
 }
 
 DevicePanel::DevicePanel(SettingsWindow *parent) : ListWidget(parent) {

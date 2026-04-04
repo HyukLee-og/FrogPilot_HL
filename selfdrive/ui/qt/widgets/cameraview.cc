@@ -159,6 +159,12 @@ void CameraWidget::initializeGL() {
 }
 
 void CameraWidget::showEvent(QShowEvent *event) {
+  const bool static_route_preview = !qEnvironmentVariable("ONROAD_ROUTE_IMAGE").trimmed().isEmpty();
+  if (static_route_preview) {
+    QOpenGLWidget::showEvent(event);
+    return;
+  }
+
   if (!vipc_thread) {
     clearFrames();
     vipc_thread = new QThread();

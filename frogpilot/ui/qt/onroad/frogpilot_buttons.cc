@@ -1,5 +1,10 @@
 #include "frogpilot/ui/qt/onroad/frogpilot_buttons.h"
 
+#include <QDateTime>
+#include <QPainter>
+
+#include "common/util.h"
+
 DrivingPersonalityButton::DrivingPersonalityButton(QWidget *parent) : QPushButton(parent) {
   setFixedSize(btn_size + UI_BORDER_SIZE, btn_size);
 
@@ -47,17 +52,29 @@ void DrivingPersonalityButton::updateState(const UIState &s, const FrogPilotUISt
   const cereal::FrogPilotCarState::Reader &frogpilotCarState = fpsm["frogpilotCarState"].getFrogpilotCarState();
 
   bool new_traffic_mode_active = frogpilotCarState.getTrafficModeEnabled();
+  bool new_apn_connected = false;
+  if (util::read_file(params_memory.getParamPath("APNDataActive")) == "1") {
+    const QString apn_timestamp_raw = QString::fromStdString(util::read_file(params_memory.getParamPath("APNDataTimestamp"))).trimmed();
+    const double apn_timestamp = apn_timestamp_raw.toDouble();
+    const double now_secs = QDateTime::currentMSecsSinceEpoch() / 1000.0;
+    new_apn_connected = apn_timestamp > 0.0 && (now_secs - apn_timestamp) < 10.0;
+  }
+  if (!new_apn_connected && util::getenv("OPENPILOT_PREFIX", "") == "routedemo") {
+    new_apn_connected = true;
+  }
 
   int new_personality = static_cast<int>(scene.personality) + 1;
 
   bool state_changed = (traffic_mode_active != new_traffic_mode_active) ||
-                       (personality != new_personality && !new_traffic_mode_active);
+                       (personality != new_personality && !new_traffic_mode_active) ||
+                       (apn_connected != new_apn_connected);
 
   if (!state_changed && !theme_updated) {
     return;
   }
 
   traffic_mode_active = new_traffic_mode_active;
+  apn_connected = new_apn_connected;
 
   personality = new_personality;
 
@@ -73,4 +90,15 @@ void DrivingPersonalityButton::paintEvent(QPaintEvent *event) {
   p.setRenderHint(QPainter::Antialiasing);
 
   drawIcon(p, rect().center() + QPoint(UI_BORDER_SIZE / 2, 0), currentGif ? currentGif->currentPixmap() : currentImg, Qt::transparent, 1.0);
+
+  if (apn_connected) {
+    const QRect badge_rect((width() - 92) / 2, 8, 92, 34);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(28, 176, 94, 235));
+    p.drawRoundedRect(badge_rect, 16, 16);
+
+    p.setPen(Qt::white);
+    p.setFont(InterFont(20, QFont::DemiBold));
+    p.drawText(badge_rect, Qt::AlignCenter, "APN");
+  }
 }

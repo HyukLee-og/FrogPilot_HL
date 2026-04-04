@@ -1,9 +1,12 @@
 #include "selfdrive/ui/qt/onroad/hud.h"
 
 #include <QDateTime>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <algorithm>
 #include <cmath>
 
+#include "common/params.h"
 #include "common/util.h"
 #include "selfdrive/ui/qt/util.h"
 
@@ -59,71 +62,118 @@ void HudRenderer::updateState(const UIState &s) {
     is_cruise_available = true;
     set_speed = is_metric ? PREVIEW_SET_SPEED_KPH : PREVIEW_SET_SPEED_KPH * KM_TO_MILE;
     speed = is_metric ? PREVIEW_SPEED_KPH : PREVIEW_SPEED_KPH * KM_TO_MILE;
-    return;
   }
 
-  if (sm.rcv_frame("carState") < s.scene.started_frame) {
+  if (!force_preview && sm.rcv_frame("carState") < s.scene.started_frame) {
     is_cruise_set = false;
     set_speed = SET_SPEED_NA;
     speed = 0.0;
+    show_modified_speed = false;
     return;
   }
 
-  const auto &controls_state = sm["controlsState"].getControlsState();
-  const auto &car_state = sm["carState"].getCarState();
-  const auto lateral_state = controls_state.getLateralControlState();
-  const auto lateral_which = lateral_state.which();
-  const bool is_overriding = selfdrive_state.getState() == cereal::SelfdriveState::OpenpilotState::OVERRIDING;
-  if (is_overriding) {
-    longitudinal_override_active = longitudinal_override_active || car_state.getGasPressed();
-    lateral_override_active = lateral_override_active || car_state.getSteeringPressed();
-  }
-  if (!angle_preview_ok) {
-    steering_angle_deg = -car_state.getSteeringAngleDeg();
+  if (!force_preview) {
+    const auto &controls_state = sm["controlsState"].getControlsState();
+    const auto &car_state = sm["carState"].getCarState();
+    seatbelt_unlatched = car_state.getSeatbeltUnlatched();
+    const auto lateral_state = controls_state.getLateralControlState();
+    const auto lateral_which = lateral_state.which();
+    const bool is_overriding = selfdrive_state.getState() == cereal::SelfdriveState::OpenpilotState::OVERRIDING;
+    if (is_overriding) {
+      longitudinal_override_active = longitudinal_override_active || car_state.getGasPressed();
+      lateral_override_active = lateral_override_active || car_state.getSteeringPressed();
+    }
+    if (!angle_preview_ok) {
+      steering_angle_deg = -car_state.getSteeringAngleDeg();
+    }
+
+    switch (lateral_which) {
+      case cereal::ControlsState::LateralControlState::TORQUE_STATE: {
+        const auto torque_state = lateral_state.getTorqueState();
+        steering_torque_pct = std::clamp(std::abs(torque_state.getOutput()), 0.0f, 1.0f);
+        if (torque_state.getSaturated()) steering_torque_pct = 1.0f;
+        break;
+      }
+      case cereal::ControlsState::LateralControlState::PID_STATE: {
+        const auto pid_state = lateral_state.getPidState();
+        steering_torque_pct = std::clamp(std::abs(pid_state.getOutput()), 0.0f, 1.0f);
+        if (pid_state.getSaturated()) steering_torque_pct = 1.0f;
+        break;
+      }
+      case cereal::ControlsState::LateralControlState::ANGLE_STATE: {
+        const auto angle_state = lateral_state.getAngleState();
+        steering_torque_pct = std::clamp(std::abs(angle_state.getOutput()), 0.0f, 1.0f);
+        if (angle_state.getSaturated()) steering_torque_pct = 1.0f;
+        break;
+      }
+      case cereal::ControlsState::LateralControlState::DEBUG_STATE: {
+        const auto debug_state = lateral_state.getDebugState();
+        steering_torque_pct = std::clamp(std::abs(debug_state.getOutput()), 0.0f, 1.0f);
+        if (debug_state.getSaturated()) steering_torque_pct = 1.0f;
+        break;
+      }
+      default:
+        break;
+    }
+
+    // Handle older routes where vCruiseCluster is not set
+    set_speed = car_state.getVCruiseCluster() == 0.0 ? controls_state.getVCruiseDEPRECATED() : car_state.getVCruiseCluster();
+    is_cruise_set = set_speed > 0 && set_speed != SET_SPEED_NA;
+    is_cruise_available = set_speed != -1;
+
+    if (is_cruise_set && !is_metric) {
+      set_speed *= KM_TO_MILE;
+    }
+
+    // Handle older routes where vEgoCluster is not set
+    v_ego_cluster_seen = v_ego_cluster_seen || car_state.getVEgoCluster() != 0.0;
+    float v_ego = v_ego_cluster_seen && !frogpilot_toggles.value("use_wheel_speed").toBool() ? car_state.getVEgoCluster() : car_state.getVEgo();
+    speed = std::max<float>(0.0f, v_ego * (is_metric ? MS_TO_KPH : MS_TO_MPH));
   }
 
-  switch (lateral_which) {
-    case cereal::ControlsState::LateralControlState::TORQUE_STATE: {
-      const auto torque_state = lateral_state.getTorqueState();
-      steering_torque_pct = std::clamp(std::abs(torque_state.getOutput()), 0.0f, 1.0f);
-      if (torque_state.getSaturated()) steering_torque_pct = 1.0f;
-      break;
+  show_modified_speed = false;
+  modified_speed_blink = false;
+  modified_speed_hide_phase = false;
+  modified_speed = 0.0f;
+  modified_speed_color = QColor(0xF6, 0xF8, 0xFB, 0xF4);
+
+  Params params_memory{"", true};
+  const std::string fake_long_debug = params_memory.get("FakeLongDebug");
+  if (!fake_long_debug.empty()) {
+    const QJsonObject debug = QJsonDocument::fromJson(QByteArray::fromStdString(fake_long_debug)).object();
+    const bool apn_enabled = debug.value("apnEnabled").toBool(false);
+    const bool apn_control_active = debug.value("apnControlActive").toBool(false);
+    const bool apn_recovery_active = debug.value("apnRecoveryActive").toBool(false);
+    const float apn_target_speed = debug.value("apnTarget").toDouble(0.0);
+    const float user_set_speed = debug.value("userSet").toDouble(0.0);
+    const float actual_set_speed = debug.value("set").toDouble(0.0);
+
+    const float unit_conversion = is_metric ? MS_TO_KPH : MS_TO_MPH;
+    const float phase_match_window = 3.0f;
+    const float actual_speed = speed;
+
+    if (apn_enabled && apn_control_active && apn_target_speed > 0.1f) {
+      modified_speed = apn_target_speed * unit_conversion;
+      show_modified_speed = true;
+      if (std::abs(actual_speed - modified_speed) <= phase_match_window) {
+        modified_speed_color = QColor(0x35, 0xD0, 0x7F, 0xF6);
+      } else {
+        modified_speed_color = QColor(0xFF, 0xA1, 0x2A, 0xF6);
+        modified_speed_blink = true;
+      }
+    } else if (apn_enabled && apn_recovery_active && user_set_speed > 0.1f && actual_set_speed > 0.1f) {
+      const float user_set_display = user_set_speed * unit_conversion;
+      const float actual_set_display = actual_set_speed * unit_conversion;
+      if (actual_set_display < user_set_display - 0.5f) {
+        modified_speed = user_set_display;
+        show_modified_speed = true;
+        modified_speed_color = QColor(0x4F, 0x8D, 0xFF, 0xF6);
+        modified_speed_blink = true;
+      } else {
+        modified_speed_hide_phase = true;
+      }
     }
-    case cereal::ControlsState::LateralControlState::PID_STATE: {
-      const auto pid_state = lateral_state.getPidState();
-      steering_torque_pct = std::clamp(std::abs(pid_state.getOutput()), 0.0f, 1.0f);
-      if (pid_state.getSaturated()) steering_torque_pct = 1.0f;
-      break;
-    }
-    case cereal::ControlsState::LateralControlState::ANGLE_STATE: {
-      const auto angle_state = lateral_state.getAngleState();
-      steering_torque_pct = std::clamp(std::abs(angle_state.getOutput()), 0.0f, 1.0f);
-      if (angle_state.getSaturated()) steering_torque_pct = 1.0f;
-      break;
-    }
-    case cereal::ControlsState::LateralControlState::DEBUG_STATE: {
-      const auto debug_state = lateral_state.getDebugState();
-      steering_torque_pct = std::clamp(std::abs(debug_state.getOutput()), 0.0f, 1.0f);
-      if (debug_state.getSaturated()) steering_torque_pct = 1.0f;
-      break;
-    }
-    default:
-      break;
   }
-
-  // Handle older routes where vCruiseCluster is not set
-  set_speed = car_state.getVCruiseCluster() == 0.0 ? controls_state.getVCruiseDEPRECATED() : car_state.getVCruiseCluster();
-  is_cruise_set = set_speed > 0 && set_speed != SET_SPEED_NA;
-  is_cruise_available = set_speed != -1;
-
-  if (is_cruise_set && !is_metric) {
-    set_speed *= KM_TO_MILE;
-  }
-
-  // Handle older routes where vEgoCluster is not set
-  v_ego_cluster_seen = v_ego_cluster_seen || car_state.getVEgoCluster() != 0.0;
-  float v_ego = v_ego_cluster_seen && !frogpilot_toggles.value("use_wheel_speed").toBool() ? car_state.getVEgoCluster() : car_state.getVEgo();
-  speed = std::max<float>(0.0f, v_ego * (is_metric ? MS_TO_KPH : MS_TO_MPH));
 }
 
 void HudRenderer::draw(QPainter &p, const QRect &surface_rect) {
@@ -135,6 +185,7 @@ void HudRenderer::draw(QPainter &p, const QRect &surface_rect) {
   if (frogpilot_nvg->standstillDuration == 0 && !frogpilot_toggles.value("hide_speed").toBool()) {
     drawCurrentSpeed(p, surface_rect);
   }
+  drawSeatbeltIcon(p, surface_rect);
   drawLfaIcon(p, surface_rect);
   drawSteeringLimitWarningIcon(p, surface_rect);
   drawSteeringWheelIcon(p, surface_rect);
@@ -206,15 +257,71 @@ void HudRenderer::drawCurrentSpeed(QPainter &p, const QRect &surface_rect) {
     unit_color = QColor(0xE8, 0xDC, 0xC2, 0xC4);
   }
 
+  if (frogpilot_nvg != nullptr &&
+      frogpilot_nvg->hasAPNCameraAlert() &&
+      frogpilot_nvg->getAPNCameraSpeed() > 0.1f &&
+      speed > frogpilot_nvg->getAPNCameraSpeed()) {
+    speed_color = QColor(0xFF, 0x45, 0x45, 0xF6);
+  }
+
   const int group_top = surface_rect.height() - 246;
   const int center_x = surface_rect.center().x();
   p.setFont(InterFont(148, QFont::Bold));
   QRect speed_rect(center_x - 230, group_top - 18, 460, 162);
+  frogpilot_nvg->currentSpeedRect = speed_rect;
+  drawModifiedSpeed(p, speed_rect);
   drawText(p, speed_rect, speedStr, speed_color, Qt::AlignHCenter | Qt::AlignBottom);
 
   p.setFont(InterFont(34, QFont::DemiBold));
   QRect unit_rect(center_x - 116, speed_rect.bottom() + 2, 232, 40);
   drawText(p, unit_rect, is_metric ? tr("KM/H") : tr("MPH"), unit_color, Qt::AlignHCenter | Qt::AlignTop);
+}
+
+void HudRenderer::drawModifiedSpeed(QPainter &p, const QRect &speed_rect) {
+  if (!show_modified_speed || modified_speed <= 0.1f || modified_speed_hide_phase) {
+    return;
+  }
+
+  const bool blink_on = ((QDateTime::currentMSecsSinceEpoch() / 420) % 2) == 0;
+  if (modified_speed_blink && !blink_on) {
+    return;
+  }
+
+  const QString modified_speed_str = QString::number(std::nearbyint(modified_speed));
+  const QRect modified_speed_rect(speed_rect.left() - 154, speed_rect.top() + 26, 138, 106);
+
+  p.save();
+  p.setFont(InterFont(76, QFont::Bold));
+  drawText(p, modified_speed_rect, modified_speed_str, modified_speed_color, Qt::AlignRight | Qt::AlignVCenter);
+  p.restore();
+}
+
+void HudRenderer::drawSeatbeltIcon(QPainter &p, const QRect &surface_rect) {
+  static const QPixmap seatbelt_img = loadPixmap("../../files/icons/seatbelt.png", {LFA_ICON_SIZE, LFA_ICON_SIZE});
+  if (seatbelt_img.isNull() || !seatbelt_unlatched) return;
+
+  const int group_top = surface_rect.height() - 246;
+  const int center_x = surface_rect.center().x();
+  const QRect speed_rect(center_x - 230, group_top - 18, 460, 162);
+  const QRect icon_rect(speed_rect.left() - 20, speed_rect.top() + 2, LFA_ICON_SIZE, LFA_ICON_SIZE);
+
+  p.save();
+  p.setRenderHint(QPainter::Antialiasing);
+  p.setPen(Qt::NoPen);
+
+  QRect glow_rect = icon_rect.adjusted(-20, -18, 20, 20);
+  QRadialGradient glow(glow_rect.center(), glow_rect.width() * 0.55);
+  glow.setColorAt(0.0, QColor(0xFF, 0x45, 0x45, 84));
+  glow.setColorAt(0.45, QColor(0xFF, 0x45, 0x45, 36));
+  glow.setColorAt(1.0, QColor(0xFF, 0x45, 0x45, 0));
+  p.setBrush(glow);
+  p.drawEllipse(glow_rect);
+  p.restore();
+
+  p.save();
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+  p.drawPixmap(icon_rect, seatbelt_img);
+  p.restore();
 }
 
 void HudRenderer::drawLfaIcon(QPainter &p, const QRect &surface_rect) {
@@ -280,7 +387,7 @@ void HudRenderer::drawLfaIcon(QPainter &p, const QRect &surface_rect) {
   }
 
   if (show_apn_badge) {
-    const QRect badge_rect(icon_rect.center().x() - 44, icon_rect.top() - 34, 88, 30);
+    const QRect badge_rect(icon_rect.center().x() - 44, icon_rect.bottom() + 8, 88, 30);
     p.save();
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);

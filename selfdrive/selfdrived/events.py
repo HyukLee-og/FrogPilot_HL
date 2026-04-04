@@ -82,6 +82,13 @@ class Events:
       bisect.insort(self.static_events, event_name)
     bisect.insort(self.events, event_name)
 
+  def remove(self, event_name: int) -> None:
+    self.events = [e for e in self.events if e != event_name]
+
+  def remove_many(self, event_names: list[int] | tuple[int, ...] | set[int]) -> None:
+    to_remove = set(event_names)
+    self.events = [e for e in self.events if e not in to_remove]
+
   def clear(self) -> None:
     self.event_counters = {k: (v + 1 if k in self.events else 0) for k, v in self.event_counters.items()}
     self.events = self.static_events.copy()
@@ -306,7 +313,8 @@ def process_not_running_alert(CP: car.CarParams, CS: car.CarState, sm: messaging
 
 
 def comm_issue_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, frogpilot_toggles: SimpleNamespace) -> Alert:
-  bs = [s for s in sm.data.keys() if not sm.all_checks([s, ])]
+  ignored = set(getattr(sm, 'ignore_alive', [])) | set(getattr(sm, 'ignore_valid', [])) | set(getattr(sm, 'ignore_average_freq', []))
+  bs = [s for s in sm.data.keys() if s not in ignored and not sm.all_checks([s, ])]
   msg = ', '.join(bs[:4])  # can't fit too many on one line
   return NoEntryAlert(msg, alert_text_1="차량과의 통신 오류")
 

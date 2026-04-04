@@ -735,6 +735,8 @@ class FrogPilotVariables:
     toggle.lock_doors = self.get_value("LockDoors", condition=toyota_doors)
     toggle.unlock_doors = self.get_value("UnlockDoors", condition=toyota_doors)
 
+    toggle.apn_fake_long = self.get_value("APNFakeLong")
+    toggle.apn_fake_long_offset = self.get_value("APNFakeLongOffset", cast=float, conversion=speed_conversion, default=0.0)
     toggle.fake_long = self.get_value("FakeLong")
     toggle.fake_long_test_ui = self.get_value("FakeLongTestUI")
     toggle.volt_sng = self.get_value("VoltSNG", condition=toggle.car_model == "CHEVROLET_VOLT")

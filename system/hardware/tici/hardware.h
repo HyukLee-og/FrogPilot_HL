@@ -20,8 +20,11 @@ public:
   }
 
   static std::string get_name() {
-    std::string model = util::read_file("/sys/firmware/devicetree/base/model");
-    return util::strip(model.substr(std::string("comma ").size()));
+    std::string model = util::strip(util::read_file("/sys/firmware/devicetree/base/model"));
+    if (model.rfind("comma ", 0) == 0 && model.size() > std::string("comma ").size()) {
+      return util::strip(model.substr(std::string("comma ").size()));
+    }
+    return model.empty() ? "tici" : model;
   }
 
   static cereal::InitData::DeviceType get_device_type() {
@@ -59,8 +62,12 @@ public:
   static void reboot() { std::system("sudo reboot"); }
   static void poweroff() { std::system("sudo poweroff"); }
   static void set_brightness(int percent) {
-    float max = std::stof(util::read_file("/sys/class/backlight/panel0-backlight/max_brightness"));
-    std::ofstream("/sys/class/backlight/panel0-backlight/brightness") << int(percent * (max / 100.0f)) << "\n";
+    const std::string max_raw = util::strip(util::read_file("/sys/class/backlight/panel0-backlight/max_brightness"));
+    const float max = max_raw.empty() ? 255.0f : std::stof(max_raw);
+    std::ofstream brightness("/sys/class/backlight/panel0-backlight/brightness");
+    if (brightness.is_open()) {
+      brightness << int(percent * (max / 100.0f)) << "\n";
+    }
   }
   static void set_display_power(bool on) {
     std::ofstream("/sys/class/backlight/panel0-backlight/bl_power") << (on ? "0" : "4") << "\n";

@@ -237,15 +237,9 @@ class Device:
     clipped_brightness = self._offroad_brightness
 
     if ui_state.started and ui_state.light_sensor >= 0:
-      clipped_brightness = ui_state.light_sensor
-
-      # CIE 1931 - https://www.photonstophotos.net/GeneralTopics/Exposure/Psychometric_Lightness_and_Gamma.htm
-      if clipped_brightness <= 8:
-        clipped_brightness = clipped_brightness / 903.3
-      else:
-        clipped_brightness = ((clipped_brightness + 16.0) / 116.0) ** 3.0
-
-      clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [30, 100]))
+      raw_light_sensor = ui_state.light_sensor
+      auto_brightness_min = 10.0 if raw_light_sensor > 2.0 else 1.0
+      clipped_brightness = min(max(raw_light_sensor, auto_brightness_min), 100.0)
 
     brightness = round(self._brightness_filter.update(clipped_brightness))
     if not self._awake:

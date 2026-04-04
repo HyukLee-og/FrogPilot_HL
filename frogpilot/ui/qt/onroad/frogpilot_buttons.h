@@ -15,6 +15,7 @@ private:
   void showEvent(QShowEvent *event) override;
   void updateTheme();
 
+  bool apn_connected = false;
   bool theme_updated;
   bool traffic_mode_active;
 

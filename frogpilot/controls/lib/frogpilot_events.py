@@ -54,7 +54,10 @@ class FrogPilotEvents:
     if self.frogpilot_planner.frogpilot_vcruise.forcing_stop:
       self.events.add(FrogPilotEventName.forcingStop)
 
-    if not self.frogpilot_planner.tracking_lead and sm["carState"].standstill and sm["carState"].gearShifter not in NON_DRIVING_GEARS:
+    standstill_in_drive = sm["carState"].standstill and sm["carState"].gearShifter not in NON_DRIVING_GEARS
+    lead_visible = self.frogpilot_planner.lead_one.status
+
+    if not self.frogpilot_planner.tracking_lead and not lead_visible and standstill_in_drive:
       if not self.frogpilot_planner.model_stopped and self.stopped_for_light and frogpilot_toggles.green_light_alert:
         self.events.add(FrogPilotEventName.greenLight)
 
@@ -65,12 +68,12 @@ class FrogPilotEvents:
     if "holidayActive" not in self.played_events and self.startup_seen and alerts_empty and len(self.events) == 0 and frogpilot_toggles.current_holiday_theme != "stock":
       self.events.add(FrogPilotEventName.holidayActive)
 
-    if self.frogpilot_planner.tracking_lead and sm["carState"].standstill and sm["carState"].gearShifter not in NON_DRIVING_GEARS:
+    if standstill_in_drive and lead_visible:
       if self.tracked_lead_distance == 0:
         self.tracked_lead_distance = self.frogpilot_planner.lead_one.dRel
 
-      lead_departing = self.frogpilot_planner.lead_one.dRel - self.tracked_lead_distance >= 1
-      lead_departing &= self.frogpilot_planner.lead_one.vLead >= 1
+      lead_departing = self.frogpilot_planner.lead_one.dRel - self.tracked_lead_distance >= 0.5
+      lead_departing |= self.frogpilot_planner.lead_one.vLead >= 0.5
 
       if lead_departing and frogpilot_toggles.lead_departing_alert:
         self.events.add(FrogPilotEventName.leadDeparting)

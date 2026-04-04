@@ -875,6 +875,7 @@ void FrogPilotLongitudinalPanel::updateMetric(bool metric, bool bootRun) {
     params.putIntNonBlocking("Offset5", params.getInt("Offset5") * speedConversion);
     params.putIntNonBlocking("Offset6", params.getInt("Offset6") * speedConversion);
     params.putIntNonBlocking("Offset7", params.getInt("Offset7") * speedConversion);
+    params.putIntNonBlocking("APNFakeLongOffset", params.getInt("APNFakeLongOffset") * speedConversion);
     params.putIntNonBlocking("SetSpeedOffset", params.getInt("SetSpeedOffset") * speedConversion);
   }
   previousMetric = metric;

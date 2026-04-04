@@ -13,17 +13,39 @@ void OnroadAlerts::updateState(const UIState &s, const FrogPilotUIState &fs) {
   bool selfdrive_engageable = selfdrive_state.getEngageable() || selfdrive_enabled;
   const bool was_resume_required = alert.type.contains("resumeRequired", Qt::CaseInsensitive);
   const bool is_resume_required = a.type.contains("resumeRequired", Qt::CaseInsensitive);
+  bool parked_preview_ok = false;
+  const int parked_preview_seconds = qEnvironmentVariableIntValue("PARKED_STANDSTILL_PREVIEW", &parked_preview_ok);
+  const bool parked_overlay_requested =
+    !is_resume_required &&
+    frogpilot_toggles.value("stopped_timer").toBool() &&
+    (parked_preview_ok ? parked_preview_seconds >= 0 : (fs.frogpilot_scene.parked && fs.frogpilot_scene.standstill));
+  if (a.size == cereal::SelfdriveState::AlertSize::NONE && parked_overlay_requested) {
+    a = Alert{tr("정차중"), "", "parkedStandstill",
+              cereal::SelfdriveState::AlertSize::MID,
+              cereal::SelfdriveState::AlertStatus::NORMAL};
+  }
+  const bool was_parked_standstill = parkedStandstillActive;
+  const bool is_parked_standstill = a.type.contains("parkedStandstill", Qt::CaseInsensitive);
   const bool animate_special_alert =
     a.type.contains("fcw", Qt::CaseInsensitive) ||
     a.type.contains("aeb", Qt::CaseInsensitive) ||
     a.type.contains("ldw", Qt::CaseInsensitive) ||
-    is_resume_required;
+    is_resume_required ||
+    is_parked_standstill;
 
   if (is_resume_required && !was_resume_required) {
     resumeRequiredTimer.restart();
   } else if (!is_resume_required && was_resume_required) {
     resumeRequiredTimer.invalidate();
   }
+
+  if (is_parked_standstill && !was_parked_standstill) {
+    parkedStandstillTimer.restart();
+  } else if (!is_parked_standstill && was_parked_standstill) {
+    parkedStandstillTimer.invalidate();
+  }
+
+  parkedStandstillActive = is_parked_standstill;
 
   if (!alert.equal(a) || selfdriveEnabled != selfdrive_enabled || selfdriveEngageable != selfdrive_engageable || animate_special_alert) {
     alert = a;
@@ -44,7 +66,9 @@ void OnroadAlerts::clear() {
   alertHeight = 0;
   selfdriveEnabled = false;
   selfdriveEngageable = false;
+  parkedStandstillActive = false;
   resumeRequiredTimer.invalidate();
+  parkedStandstillTimer.invalidate();
 }
 
 OnroadAlerts::Alert OnroadAlerts::getAlert(const SubMaster &sm, const SubMaster &fpsm, uint64_t started_frame) {
@@ -75,6 +99,14 @@ OnroadAlerts::Alert OnroadAlerts::getAlert(const SubMaster &sm, const SubMaster 
     return Alert{tr("오토 홀드"), tr("해제하려면 악셀을 밟거나 RES버튼을 누르세요"),
                  "resumeRequiredPreview", cereal::SelfdriveState::AlertSize::MID,
                  cereal::SelfdriveState::AlertStatus::NORMAL};
+  } else {
+    bool parked_preview_ok = false;
+    const int parked_preview_seconds = qEnvironmentVariableIntValue("PARKED_STANDSTILL_PREVIEW", &parked_preview_ok);
+    if (parked_preview_ok && parked_preview_seconds >= 0) {
+      return Alert{tr("정차중"), "", "parkedStandstillPreview",
+                   cereal::SelfdriveState::AlertSize::MID,
+                   cereal::SelfdriveState::AlertStatus::NORMAL};
+    }
   }
 
   // FrogPilot variables
@@ -176,6 +208,7 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
     QRect r = QRect(margin, height() - h + margin, width() - margin * 2, h - margin * 2);
 
     const bool is_resume_required_alert = alert.type.contains("resumeRequired", Qt::CaseInsensitive);
+    const bool is_parked_standstill_alert = alert.type.contains("parkedStandstill", Qt::CaseInsensitive);
     const bool is_lead_departing_alert = alert.type.contains("leadDeparting", Qt::CaseInsensitive);
     const bool is_collision_alert = alert.type.contains("fcw", Qt::CaseInsensitive) || alert.type.contains("aeb", Qt::CaseInsensitive);
     const bool is_lane_departure_alert = alert.type.contains("ldw", Qt::CaseInsensitive);
@@ -206,6 +239,18 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
       p.drawRect(full_rect);
     }
 
+    if (is_parked_standstill_alert) {
+      QRect full_rect = rect();
+      QLinearGradient full_grad(0, full_rect.top(), 0, full_rect.bottom());
+      full_grad.setColorAt(0.0, QColor(8, 10, 13, 224));
+      full_grad.setColorAt(0.45, QColor(6, 8, 10, 236));
+      full_grad.setColorAt(1.0, QColor(3, 4, 6, 246));
+      p.setPen(Qt::NoPen);
+      p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+      p.setBrush(full_grad);
+      p.drawRect(full_rect);
+    }
+
     if (icon_alert) {
       QRect overlay_rect = rect();
       QLinearGradient overlay_grad(0, overlay_rect.top(), 0, overlay_rect.bottom());
@@ -221,7 +266,7 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
 
     p.setPen(Qt::NoPen);
     p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-    if (!is_resume_required_alert && !is_lead_departing_alert) {
+    if (!is_resume_required_alert && !is_lead_departing_alert && !is_parked_standstill_alert) {
       p.setBrush(QBrush(alert_color));
       p.drawRoundedRect(r, radius, radius);
     }
@@ -230,7 +275,7 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
     g.setColorAt(0, QColor::fromRgbF(0, 0, 0, 0.05));
     g.setColorAt(1, QColor::fromRgbF(0, 0, 0, 0.35));
 
-    if (!is_resume_required_alert && !is_lead_departing_alert) {
+    if (!is_resume_required_alert && !is_lead_departing_alert && !is_parked_standstill_alert) {
       p.setCompositionMode(QPainter::CompositionMode_DestinationOver);
       p.setBrush(QBrush(g));
       p.drawRoundedRect(r, radius, radius);
@@ -312,6 +357,32 @@ void OnroadAlerts::paintEvent(QPaintEvent *event) {
         bool long_alert2 = alert.text2.length() > 40;
         p.setFont(InterFont(long_alert2 && sidebarsOpen ? 56 : 66));
         p.drawText(description_rect, Qt::AlignHCenter | Qt::AlignTop, alert.text2);
+      } else if (is_parked_standstill_alert) {
+        static const int parking_icon_size = 172;
+        static const QPixmap parking_img = loadPixmap("../../files/icons/parking.png", {parking_icon_size, parking_icon_size});
+        const int elapsed_seconds = parkedStandstillTimer.isValid() ? parkedStandstillTimer.elapsed() / 1000 : 0;
+        const QString elapsed_text = QString("%1:%2").arg(elapsed_seconds / 60).arg(elapsed_seconds % 60, 2, 10, QChar('0'));
+        const int title_gap = 28;
+        const int title_width = 340;
+        const int title_group_width = parking_icon_size + title_gap + title_width;
+        const int title_left = (width() - title_group_width) / 2;
+        const int title_top = rect().center().y() - 168;
+        QRect icon_rect(title_left, title_top, parking_icon_size, parking_icon_size);
+        QRect title_rect(icon_rect.right() + title_gap, title_top + 10, title_width, parking_icon_size - 20);
+        QRect timer_rect(0, title_top + parking_icon_size + 34, width(), 132);
+
+        if (!parking_img.isNull()) {
+          const QPixmap scaled_img = parking_img.scaled(icon_rect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+          QRect draw_rect(icon_rect.left(), icon_rect.top() + (icon_rect.height() - scaled_img.height()) / 2, scaled_img.width(), scaled_img.height());
+          p.drawPixmap(draw_rect, scaled_img);
+        }
+
+        p.setPen(QColor(0xff, 0xff, 0xff));
+        p.setFont(InterFont(92, QFont::Bold));
+        p.drawText(title_rect, Qt::AlignLeft | Qt::AlignVCenter, alert.text1);
+
+        p.setFont(InterFont(112, QFont::Bold));
+        p.drawText(timer_rect, Qt::AlignHCenter | Qt::AlignTop, elapsed_text);
       } else {
         bool long_alert1 = alert.text1.length() > 30;
         p.setFont(InterFont(long_alert1 && sidebarsOpen ? 78 : 88, QFont::Bold));

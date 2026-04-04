@@ -23,6 +23,8 @@ DEFAULT_PORT = 8123
 KEY_LINE_RE = re.compile(r'^\s*\{"([^"]+)",\s*\{(.*)\}\},?\s*$')
 APN_STATE_PATH = Path("/data/media/0/apn_bridge/bridge_state.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "apn_bridge" / "bridge_state.json"
 APN_HTTP_PATH = Path("/data/media/0/apn_bridge/latest_carrot_http.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "apn_bridge" / "latest_carrot_http.json"
+APN_LABELS_PATH = Path("/data/media/0/apn_bridge/sdi_labels.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "apn_bridge" / "sdi_labels.json"
+CAN_LABELS_PATH = Path("/data/media/0/button_sniff/can_labels.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "button_sniff" / "can_labels.json"
 
 if str(REPO_ROOT) not in sys.path:
   sys.path.insert(0, str(REPO_ROOT))
@@ -33,6 +35,29 @@ try:
 except Exception as exc:
   messaging = None
   MESSAGING_IMPORT_ERROR = str(exc)
+
+PARAMS_IMPORT_ERROR = ""
+try:
+  from openpilot.common.params import Params
+except Exception as exc:
+  Params = None
+  PARAMS_IMPORT_ERROR = str(exc)
+
+CAN_IMPORT_ERROR = ""
+try:
+  from opendbc.can.parser import CANParser
+except Exception as exc:
+  CANParser = None
+  CAN_IMPORT_ERROR = str(exc)
+
+
+def memory_params():
+  if Params is None:
+    return None
+  try:
+    return Params(memory=True)
+  except Exception:
+    return None
 
 
 @dataclass
@@ -86,16 +111,246 @@ class LiveStateReader:
 
 LIVE_READER = LiveStateReader()
 
+DBC_NAME = "gm_global_a_powertrain_generated"
+CAN_SIGNAL_CANDIDATES = [
+  {"id": "decoded:0:608:ClusterSpeed", "src": 0, "address": 608, "message": "SPEED_RELATED", "signal": "ClusterSpeed", "title": "608 ClusterSpeed", "digits": 2},
+  {"id": "decoded:0:977:CruiseSetSpeed", "src": 0, "address": 977, "message": "ECMCruiseControl", "signal": "CruiseSetSpeed", "title": "977 CruiseSetSpeed", "digits": 4},
+  {"id": "decoded:2:880:ACCSpeedSetpoint", "src": 2, "address": 880, "message": "ASCMActiveCruiseControlStatus", "signal": "ACCSpeedSetpoint", "title": "880 ACCSpeedSetpoint", "digits": 4},
+]
+CAN_RAW_CANDIDATE_ADDRESSES = {608, 880, 977}
+
+
+class CanSignalReader:
+  SERVICES = ["carState", "can"]
+
+  def __init__(self) -> None:
+    self.available = messaging is not None and CANParser is not None
+    self.error = MESSAGING_IMPORT_ERROR or CAN_IMPORT_ERROR
+    self._lock = threading.Lock()
+    self._sm = None
+    self._pt_parser = None
+    self._cam_parser = None
+    if self.available:
+      try:
+        self._sm = messaging.SubMaster(self.SERVICES)
+        self._pt_parser = CANParser(DBC_NAME, [("SPEED_RELATED", float("nan")), ("ECMCruiseControl", float("nan"))], 0)
+        self._cam_parser = CANParser(DBC_NAME, [("ASCMActiveCruiseControlStatus", float("nan"))], 2)
+      except Exception as exc:
+        self.available = False
+        self.error = str(exc)
+        self._sm = None
+        self._pt_parser = None
+        self._cam_parser = None
+
+  def snapshot(self) -> dict[str, Any]:
+    if not self.available or self._sm is None or self._pt_parser is None or self._cam_parser is None:
+      return {"available": False, "error": self.error, "entries": []}
+
+    with self._lock:
+      try:
+        self._sm.update(0)
+        can_msgs = list(self._sm["can"]) if self._sm.updated["can"] else []
+        if can_msgs:
+          parser_frames = [(int(msg.address), bytes(msg.dat), int(msg.src)) for msg in can_msgs]
+          parser_input = [(time.monotonic_ns(), parser_frames)]
+          self._pt_parser.update(parser_input)
+          self._cam_parser.update(parser_input)
+
+        raw_by_key: dict[str, str] = {}
+        for msg in can_msgs:
+          src = int(msg.src)
+          address = int(msg.address)
+          if address in CAN_RAW_CANDIDATE_ADDRESSES:
+            raw_by_key[f"raw:{src}:{address}"] = msg.dat.hex()
+
+        entries = []
+        for spec in CAN_SIGNAL_CANDIDATES:
+          parser = self._pt_parser if spec["src"] == 0 else self._cam_parser
+          raw_value = parser.vl[spec["message"]][spec["signal"]]
+          rounded = round(float(raw_value), spec["digits"])
+          entries.append({
+            "id": spec["id"],
+            "kind": "decoded",
+            "title": spec["title"],
+            "src": spec["src"],
+            "address": spec["address"],
+            "message": spec["message"],
+            "signal": spec["signal"],
+            "value": rounded,
+          })
+
+        for raw_id, dat in sorted(raw_by_key.items()):
+          _, src_text, address_text = raw_id.split(":", 2)
+          entries.append({
+            "id": raw_id,
+            "kind": "raw",
+            "title": f"{address_text} RAW",
+            "src": int(src_text),
+            "address": int(address_text),
+            "message": "RAW CAN",
+            "signal": "dat",
+            "value": dat,
+          })
+
+        return {
+          "available": True,
+          "error": "",
+          "updatedAt": time.time(),
+          "entries": entries,
+        }
+      except Exception as exc:
+        self.available = False
+        self.error = str(exc)
+        return {"available": False, "error": self.error, "entries": []}
+
+
+CAN_READER = CanSignalReader()
+
+
+def summarize_button_events(events: Any) -> str:
+  parts: list[str] = []
+  try:
+    for ev in list(events):
+      parts.append(f"{str(ev.type)}:{'1' if bool(ev.pressed) else '0'}")
+  except Exception:
+    return "-"
+  return ", ".join(parts) if parts else "-"
+
+
+def build_vehicle_status_label_entries(car_state: Any, is_metric: bool) -> list[dict[str, Any]]:
+  if car_state is None:
+    return []
+
+  cruise_state = getattr(car_state, "cruiseState", None)
+  speed_unit = "km/h" if is_metric else "mph"
+  speed_factor = 3.6 if is_metric else 2.236936
+
+  def speed_entry(entry_id: str, title: str, value_ms: Any) -> dict[str, Any]:
+    try:
+      value = round(float(value_ms) * speed_factor, 3)
+    except Exception:
+      value = "-"
+    return {
+      "id": entry_id,
+      "kind": "status",
+      "title": title,
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": speed_unit,
+      "value": value,
+    }
+
+  entries = [
+    speed_entry("status:carState:vEgo", "차량 속도", getattr(car_state, "vEgo", 0.0)),
+    speed_entry("status:carState:vEgoCluster", "클러스터 속도", getattr(car_state, "vEgoCluster", 0.0)),
+    speed_entry("status:carState:vCruiseCluster", "vCruiseCluster", getattr(car_state, "vCruiseCluster", 0.0)),
+    speed_entry("status:cruiseState:speed", "ACC 속도", getattr(cruise_state, "speed", 0.0) if cruise_state is not None else 0.0),
+    speed_entry("status:cruiseState:speedCluster", "ACC 클러스터 속도", getattr(cruise_state, "speedCluster", 0.0) if cruise_state is not None else 0.0),
+    {
+      "id": "status:cruiseState:available",
+      "kind": "status",
+      "title": "ACC Available",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "bool",
+      "value": bool(getattr(cruise_state, "available", False)) if cruise_state is not None else False,
+    },
+    {
+      "id": "status:cruiseState:enabled",
+      "kind": "status",
+      "title": "ACC Enabled",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "bool",
+      "value": bool(getattr(cruise_state, "enabled", False)) if cruise_state is not None else False,
+    },
+    {
+      "id": "status:carState:standstill",
+      "kind": "status",
+      "title": "차량 정지",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "bool",
+      "value": bool(getattr(car_state, "standstill", False)),
+    },
+    {
+      "id": "status:carState:gasPressed",
+      "kind": "status",
+      "title": "가속 페달",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "bool",
+      "value": bool(getattr(car_state, "gasPressed", False)),
+    },
+    {
+      "id": "status:carState:brakePressed",
+      "kind": "status",
+      "title": "브레이크",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "bool",
+      "value": bool(getattr(car_state, "brakePressed", False)),
+    },
+    {
+      "id": "status:carState:leftBlinker",
+      "kind": "status",
+      "title": "좌측 방향지시등",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "bool",
+      "value": bool(getattr(car_state, "leftBlinker", False)),
+    },
+    {
+      "id": "status:carState:rightBlinker",
+      "kind": "status",
+      "title": "우측 방향지시등",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "bool",
+      "value": bool(getattr(car_state, "rightBlinker", False)),
+    },
+    {
+      "id": "status:carState:buttonEvents",
+      "kind": "status",
+      "title": "버튼 이벤트",
+      "src": -1,
+      "address": -1,
+      "message": "carState",
+      "signal": "events",
+      "value": summarize_button_events(getattr(car_state, "buttonEvents", [])),
+    },
+  ]
+  return entries
+
 PARAMS_CACHE_TTL = 1.0
 META_CACHE_TTL = 15.0
-STATUS_CACHE_TTL = 0.5
+STATUS_CACHE_TTL = 1.0
+CAN_DEBUG_CACHE_TTL = 2.0
+CAN_DEBUG_STALE_RETENTION_SEC = 600.0
+DEBUG_CACHE_TTL = 2.0
 
 GIT_BRANCH = ""
 GIT_COMMIT = ""
 
 _PARAMS_CACHE: dict[str, Any] = {"expires_at": 0.0, "items": None, "mapping": None}
 _META_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
-_STATUS_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
+_STATUS_CACHE: dict[str, Any] = {
+  "expires_at": 0.0,
+  "value": None,
+  "compact_expires_at": 0.0,
+  "compact_value": None,
+}
+_CAN_DEBUG_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
+_CAN_DEBUG_OBSERVED: dict[str, dict[str, Any]] = {}
+_DEBUG_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
 
 
 def split_top_level(text: str) -> list[str]:
@@ -261,6 +516,49 @@ def format_percent(value: Any) -> str:
     return "-"
 
 
+def format_apn_distance(meters: Any) -> str:
+  try:
+    value = float(meters)
+  except Exception:
+    return "-"
+  if value <= 0:
+    return "-"
+  if value >= 1000:
+    return f"{value / 1000.0:.1f} km"
+  return f"{int(round(value))} m"
+
+
+def format_apn_duration(seconds: Any) -> str:
+  try:
+    total = int(round(float(seconds)))
+  except Exception:
+    return "-"
+  if total <= 0:
+    return "-"
+  hours, rem = divmod(total, 3600)
+  minutes, seconds = divmod(rem, 60)
+  if hours > 0:
+    return f"{hours}시간 {minutes}분"
+  if minutes > 0:
+    return f"{minutes}분 {seconds}초" if seconds else f"{minutes}분"
+  return f"{seconds}초"
+
+
+def format_apn_turn(turn_type: Any, main_text: Any) -> str:
+  text = str(main_text or "").strip()
+  try:
+    code = int(round(float(turn_type)))
+  except Exception:
+    code = 0
+  if text and code > 0:
+    return f"{text} ({code})"
+  if text:
+    return text
+  if code > 0:
+    return f"Turn {code}"
+  return "-"
+
+
 def max_or_default(values: Any, default: float = 0.0) -> float:
   try:
     seq = list(values)
@@ -384,16 +682,104 @@ def read_json_file(path: Path) -> dict[str, Any]:
     return {}
 
 
+def as_int(value: Any, default: int = 0) -> int:
+  try:
+    return int(round(float(value)))
+  except Exception:
+    return default
+
+
+def as_bool(value: Any) -> bool:
+  if isinstance(value, bool):
+    return value
+  if isinstance(value, (int, float)):
+    return value != 0
+  if isinstance(value, str):
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+  return False
+
+
+def build_apn_signature_fields(packet_payload: dict[str, Any]) -> dict[str, Any]:
+  return {
+    "sdiType": as_int(packet_payload.get("nSdiType", packet_payload.get("nsdiType", 0))),
+    "sdiSection": as_int(packet_payload.get("nSdiSection", packet_payload.get("nsdiSection", 0))),
+    "sdiPlusType": as_int(packet_payload.get("nSdiPlusType", packet_payload.get("nsdiPlusType", 0))),
+    "sdiBlockType": as_int(packet_payload.get("nSdiBlockType", packet_payload.get("nsdiBlockType", 0))),
+    "blockSection": as_bool(packet_payload.get("bSdiBlockSection", packet_payload.get("bsdiBlockSection", False))),
+    "changeableSpeed": as_bool(packet_payload.get("bIsChangeableSpeedType", packet_payload.get("bisChangeableSpeedType", False))),
+    "limitSignChanged": as_bool(packet_payload.get("bIsLimitSpeedSignChanged", packet_payload.get("bisLimitSpeedSignChanged", False))),
+  }
+
+
+def build_apn_signature(fields: dict[str, Any]) -> str:
+  if not any(bool(value) for value in fields.values()):
+    return ""
+  return "|".join([
+    f"T{int(fields.get('sdiType', 0) or 0)}",
+    f"S{int(fields.get('sdiSection', 0) or 0)}",
+    f"P{int(fields.get('sdiPlusType', 0) or 0)}",
+    f"B{int(fields.get('sdiBlockType', 0) or 0)}",
+    f"BS{1 if fields.get('blockSection') else 0}",
+    f"C{1 if fields.get('changeableSpeed') else 0}",
+    f"L{1 if fields.get('limitSignChanged') else 0}",
+  ])
+
+
+def summarize_apn_signature(fields: dict[str, Any]) -> str:
+  parts = [
+    f"Type {int(fields.get('sdiType', 0) or 0)}",
+    f"Section {int(fields.get('sdiSection', 0) or 0)}",
+    f"Plus {int(fields.get('sdiPlusType', 0) or 0)}",
+    f"Block {int(fields.get('sdiBlockType', 0) or 0)}",
+    f"BlockSection {'ON' if fields.get('blockSection') else 'OFF'}",
+  ]
+  if fields.get("changeableSpeed"):
+    parts.append("가변속도")
+  if fields.get("limitSignChanged"):
+    parts.append("표지변경")
+  return " · ".join(parts)
+
+
+def read_apn_labels() -> dict[str, dict[str, Any]]:
+  data = read_json_file(APN_LABELS_PATH)
+  return data if isinstance(data, dict) else {}
+
+
+def list_apn_labels() -> list[dict[str, Any]]:
+  labels = read_apn_labels()
+  items: list[dict[str, Any]] = []
+  for signature, entry in labels.items():
+    if not isinstance(entry, dict):
+      continue
+    fields = entry.get("fields") if isinstance(entry.get("fields"), dict) else {}
+    updated_at = float(entry.get("updatedAt", 0.0) or 0.0)
+    items.append({
+      "signature": signature,
+      "label": str(entry.get("label", "")).strip(),
+      "fields": fields,
+      "summary": summarize_apn_signature(fields),
+      "updatedAt": updated_at,
+    })
+  items.sort(key=lambda item: item["updatedAt"], reverse=True)
+  return items
+
+
 def build_apn_status(params: dict[str, dict[str, Any]]) -> dict[str, Any]:
+  local_preview_mode = not Path("/data/media/0").exists()
   use_apn = bool(param_value(params, "UseAPN", False))
   bridge_state = read_json_file(APN_STATE_PATH)
   latest_http = read_json_file(APN_HTTP_PATH)
+  bridge_enabled = bool(bridge_state.get("enabled", False))
+
+  if local_preview_mode and not use_apn and (bridge_enabled or latest_http):
+    use_apn = True
 
   last_http = bridge_state.get("lastCarrotHttp") if isinstance(bridge_state.get("lastCarrotHttp"), dict) else {}
   if not last_http and latest_http:
     last_http = latest_http
 
   last_payload = last_http.get("payload") if isinstance(last_http.get("payload"), dict) else {}
+  packet_payload = last_payload.get("rgdata") if isinstance(last_payload.get("rgdata"), dict) else last_payload
   last_received_at = last_http.get("receivedAt") or bridge_state.get("updatedAt") or 0.0
   try:
     last_received_at = float(last_received_at)
@@ -402,24 +788,84 @@ def build_apn_status(params: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
   age_sec = max(0.0, time.time() - last_received_at) if last_received_at else None
   connected = bool(last_http) and age_sec is not None and age_sec < 10.0
+  if local_preview_mode and bridge_enabled and last_http:
+    connected = True
+    age_sec = 0.0
+    last_received_at = time.time()
 
   broadcast = bridge_state.get("broadcast") if isinstance(bridge_state.get("broadcast"), dict) else {}
   http_server = bridge_state.get("httpServer") if isinstance(bridge_state.get("httpServer"), dict) else {}
 
-  road_name = last_payload.get("szPosRoadName") or last_payload.get("roadName") or "-"
-  sdi_type = last_payload.get("nSdiType", 0)
-  sdi_section = last_payload.get("nSdiSection", 0)
-  sdi_dist = last_payload.get("nSdiDist", 0)
-  road_limit = last_payload.get("nRoadLimitSpeed", 0)
+  road_name = packet_payload.get("szPosRoadName") or packet_payload.get("roadName") or "-"
+  sdi_type = packet_payload.get("nSdiType", packet_payload.get("nsdiType", 0))
+  sdi_section = packet_payload.get("nSdiSection", packet_payload.get("nsdiSection", 0))
+  sdi_plus_type = packet_payload.get("nSdiPlusType", packet_payload.get("nsdiPlusType", 0))
+  sdi_block_type = packet_payload.get("nSdiBlockType", packet_payload.get("nsdiBlockType", 0))
+  sdi_block_section = as_bool(packet_payload.get("bSdiBlockSection", packet_payload.get("bsdiBlockSection", False)))
+  changeable_speed = as_bool(packet_payload.get("bIsChangeableSpeedType", packet_payload.get("bisChangeableSpeedType", False)))
+  limit_sign_changed = as_bool(packet_payload.get("bIsLimitSpeedSignChanged", packet_payload.get("bisLimitSpeedSignChanged", False)))
+  sdi_dist = packet_payload.get("nSdiDist", packet_payload.get("nsdiDist", 0))
+  go_pos_dist = packet_payload.get("nGoPosDist", packet_payload.get("ngoPosDist", 0))
+  go_pos_time = packet_payload.get("nGoPosTime", packet_payload.get("ngoPosTime", 0))
+  tbt_dist = packet_payload.get("nTBTDist", packet_payload.get("ntbtdist", 0))
+  tbt_turn_type = packet_payload.get("nTBTTurnType", packet_payload.get("ntbtturnType", 0))
+  tbt_main_text = packet_payload.get("szTBTMainText", packet_payload.get("tbtMainText", ""))
+  route_active = bool(
+    broadcast.get("CarrotRouteActive", False) or
+    float(go_pos_dist or 0) > 0 or
+    float(go_pos_time or 0) > 0 or
+    float(tbt_dist or 0) > 0 or
+    float(tbt_turn_type or 0) > 0 or
+    bool(str(tbt_main_text or "").strip())
+  )
+  road_limit = (
+    packet_payload.get("nSdiPlusSpeedLimit", packet_payload.get("nsdiPlusSpeedLimit")) or
+    packet_payload.get("nSdiSpeedLimit", packet_payload.get("nsdiSpeedLimit")) or
+    packet_payload.get("nRoadLimitSpeed", packet_payload.get("nroadLimitSpeed", 0))
+  )
   if isinstance(road_limit, (int, float)) and road_limit > 200:
     road_limit = road_limit / 10.0
+  camera_only_active = bool(float(sdi_dist or 0) > 0 and (int(sdi_type or 0) > 0 or int(sdi_section or 0) > 0))
+  if not route_active and not camera_only_active:
+    road_name = "-"
+    road_limit = 0
+    sdi_type = 0
+    sdi_section = 0
+    sdi_dist = 0
+  elif not route_active and camera_only_active:
+    road_name = "-"
+    road_limit = (
+      packet_payload.get("nSdiPlusSpeedLimit", packet_payload.get("nsdiPlusSpeedLimit")) or
+      packet_payload.get("nSdiSpeedLimit", packet_payload.get("nsdiSpeedLimit")) or
+      0
+    )
+    if isinstance(road_limit, (int, float)) and road_limit > 200:
+      road_limit = road_limit / 10.0
 
   status_label = "CONNECTED" if connected else "WAITING" if use_apn else "OFF"
+  message = bridge_state.get("message", "")
+  if connected and route_active and not message:
+    source = last_http.get("from", "-")
+    message = f"Receiving {last_http.get('kind', 'packet')} from {source}"
+  elif connected and camera_only_active and not message:
+    message = "안전운전 모드 - 과속카메라 정보 수신 중"
+  elif connected and not route_active and not message:
+    message = "안전운전 모드 감지됨 - 경로안내 데이터 대기 중"
+  elif use_apn and not connected and not message:
+    message = "Waiting for CarrotNavi packets"
+
+  signature_fields = build_apn_signature_fields(packet_payload)
+  current_signature = build_apn_signature(signature_fields)
+  current_signature_summary = summarize_apn_signature(signature_fields) if current_signature else "-"
+  saved_labels = list_apn_labels()
+  current_label = next((item["label"] for item in saved_labels if item["signature"] == current_signature), "")
+
   debug_payload = {
     "useApn": use_apn,
-    "bridgeEnabled": bool(bridge_state.get("enabled", False)),
+    "bridgeEnabled": bridge_enabled,
     "connected": connected,
-    "routeActive": bool(broadcast.get("CarrotRouteActive", False)),
+    "routeActive": route_active,
+    "cameraOnlyActive": camera_only_active,
     "deviceIp": broadcast.get("ip", "-"),
     "listenPort": broadcast.get("port", 0),
     "httpPort": http_server.get("port", 0),
@@ -433,16 +879,34 @@ def build_apn_status(params: dict[str, dict[str, Any]]) -> dict[str, Any]:
     "roadLimitKph": road_limit,
     "sdiType": sdi_type,
     "sdiSection": sdi_section,
+    "sdiPlusType": sdi_plus_type,
+    "sdiBlockType": sdi_block_type,
+    "bSdiBlockSection": sdi_block_section,
+    "bIsChangeableSpeedType": changeable_speed,
+    "bIsLimitSpeedSignChanged": limit_sign_changed,
+    "currentSignature": current_signature,
+    "currentSignatureSummary": current_signature_summary,
+    "currentLabel": current_label or None,
     "sdiDistanceM": sdi_dist,
+    "remainingDistanceM": go_pos_dist,
+    "remainingDistanceLabel": format_apn_distance(go_pos_dist),
+    "remainingTimeSec": go_pos_time,
+    "remainingTimeLabel": format_apn_duration(go_pos_time),
+    "nextTurnDistanceM": tbt_dist,
+    "nextTurnDistanceLabel": format_apn_distance(tbt_dist),
+    "nextTurnType": tbt_turn_type,
+    "nextTurnMainText": tbt_main_text,
+    "nextTurnLabel": format_apn_turn(tbt_turn_type, tbt_main_text),
     "updatedAt": bridge_state.get("updatedAt", 0),
   }
 
   return {
     "useApn": use_apn,
-    "bridgeEnabled": bool(bridge_state.get("enabled", False)),
+    "bridgeEnabled": bridge_enabled,
     "connected": connected,
     "statusLabel": status_label,
-    "routeActive": bool(broadcast.get("CarrotRouteActive", False)),
+    "routeActive": route_active,
+    "cameraOnlyActive": camera_only_active,
     "deviceIp": broadcast.get("ip", "-"),
     "listenPort": broadcast.get("port", 0),
     "httpPort": http_server.get("port", 0),
@@ -457,8 +921,22 @@ def build_apn_status(params: dict[str, dict[str, Any]]) -> dict[str, Any]:
     "roadLimitKph": road_limit if road_limit else "-",
     "sdiType": sdi_type if sdi_type else "-",
     "sdiSection": sdi_section if sdi_section else "-",
+    "sdiPlusType": sdi_plus_type if sdi_plus_type else "-",
+    "sdiBlockType": sdi_block_type if sdi_block_type else "-",
+    "sdiBlockSection": sdi_block_section,
+    "changeableSpeed": changeable_speed,
+    "limitSignChanged": limit_sign_changed,
+    "currentSignature": current_signature,
+    "currentSignatureSummary": current_signature_summary,
+    "currentSignatureFields": signature_fields,
+    "currentLabel": current_label or "-",
+    "savedLabels": saved_labels,
     "sdiDistanceM": sdi_dist if sdi_dist else "-",
-    "message": bridge_state.get("message", ""),
+    "remainingDistanceLabel": format_apn_distance(go_pos_dist),
+    "remainingTimeLabel": format_apn_duration(go_pos_time),
+    "nextTurnDistanceLabel": format_apn_distance(tbt_dist),
+    "nextTurnLabel": format_apn_turn(tbt_turn_type, tbt_main_text),
+    "message": message,
     "debugJson": json.dumps(debug_payload, ensure_ascii=False, indent=2),
   }
 
@@ -533,30 +1011,11 @@ def build_stats() -> dict[str, Any]:
   aeb_events = int(total_events.get("stockAeb", 0) or 0) + int(total_events.get("fcw", 0) or 0)
 
   model_times = stats.get("ModelTimes", {}) or {}
-  weather_times = stats.get("WeatherTimes", {}) or {}
-  personality_times = stats.get("PersonalityTimes", {}) or {}
-  random_events = stats.get("RandomEvents", {}) or {}
   cruise_speed_times = stats.get("CruiseSpeedTimes", {}) or {}
 
   model_items = [
     make_stat(name.replace("(Default)", "").strip(), format_time_compact(seconds))
     for name, seconds in sorted(model_times.items(), key=lambda item: float(item[1]), reverse=True)
-  ] or [make_stat("기록 없음", "-")]
-
-  weather_items = [
-    make_stat(WEATHER_LABELS.get(name, name), format_time_compact(seconds))
-    for name, seconds in sorted(weather_times.items(), key=lambda item: float(item[1]), reverse=True)
-  ] or [make_stat("기록 없음", "-")]
-
-  personality_items = [
-    make_stat(PERSONALITY_LABELS.get(name, name), format_time_compact(seconds))
-    for name, seconds in sorted(personality_times.items(), key=lambda item: float(item[1]), reverse=True)
-    if name != "Unknown"
-  ] or [make_stat("기록 없음", "-")]
-
-  random_event_items = [
-    make_stat(RANDOM_EVENT_LABELS.get(name, name), f"{int(count):,}회")
-    for name, count in sorted(random_events.items(), key=lambda item: int(item[1]), reverse=True)
   ] or [make_stat("기록 없음", "-")]
 
   summary = [
@@ -566,19 +1025,16 @@ def build_stats() -> dict[str, Any]:
     make_stat("개입 없이 최장 거리", format_distance_value(stats.get("LongestDistanceWithoutOverride", 0), is_metric), "accent"),
   ]
 
+  pulse = {
+    "primaryLabel": "총 활성화",
+    "primaryValue": f"{int(stats.get('Engages', 0)):,}회",
+    "secondaryLabel": "긴급 제동 경고",
+    "secondaryValue": f"{aeb_events:,}회",
+    "noteLabel": "Overview",
+    "noteText": "제어 사용, 개입 기록, 주행 모델 통계를 아래 카드에서 확인합니다.",
+  }
+
   sections = [
-    {
-      "id": "overview",
-      "title": "운행 개요",
-      "items": [
-        make_stat("총 주행 횟수", f"{int(stats.get('FrogPilotDrives', 0)):,}회", "accent"),
-        make_stat("총 주행 거리", format_distance_value(stats.get("FrogPilotMeters", 0), is_metric), "accent"),
-        make_stat("총 주행 시간", format_time_compact(stats.get("FrogPilotSeconds", 0)), "accent"),
-        make_stat("이번 달 주행 거리", format_distance_value(stats.get("CurrentMonthsMeters", 0), is_metric)),
-        make_stat("총 추적 시간", format_time_compact(tracked_time)),
-        make_stat("즐겨찾는 설정 속도", top_cruise_speed(cruise_speed_times, is_metric)),
-      ],
-    },
     {
       "id": "control",
       "title": "제어 사용",
@@ -610,27 +1066,6 @@ def build_stats() -> dict[str, Any]:
       "title": "주행 모델",
       "items": model_items,
     },
-    {
-      "id": "personalities",
-      "title": "주행 성향",
-      "items": personality_items,
-    },
-    {
-      "id": "weather",
-      "title": "날씨별 주행",
-      "items": weather_items,
-    },
-    {
-      "id": "events",
-      "title": "이벤트 / 개구리 통계",
-      "items": [
-        make_stat("긴급 제동 경고", f"{aeb_events:,}회", "warning"),
-        make_stat("개구리 점프", f"{int(stats.get('FrogHops', 0)):,}회"),
-        make_stat("개구리 짹짹", f"{int(stats.get('FrogChirps', 0)):,}회"),
-        make_stat("개구리 끽끽", f"{int(stats.get('FrogSqueaks', 0)):,}회"),
-        make_stat("염소 비명", f"{int(stats.get('GoatScreams', 0)):,}회"),
-      ] + random_event_items,
-    },
   ]
 
   return {
@@ -643,6 +1078,7 @@ def build_stats() -> dict[str, Any]:
       "time": format_time_compact(stats.get("FrogPilotSeconds", 0)),
       "cards": summary,
     },
+    "pulse": pulse,
     "sections": sections,
   }
 
@@ -699,6 +1135,13 @@ def invalidate_runtime_caches() -> None:
   _META_CACHE["value"] = None
   _STATUS_CACHE["expires_at"] = 0.0
   _STATUS_CACHE["value"] = None
+  _STATUS_CACHE["compact_expires_at"] = 0.0
+  _STATUS_CACHE["compact_value"] = None
+  _CAN_DEBUG_CACHE["expires_at"] = 0.0
+  _CAN_DEBUG_CACHE["value"] = None
+  _DEBUG_CACHE["expires_at"] = 0.0
+  _DEBUG_CACHE["value"] = None
+  _CAN_DEBUG_OBSERVED.clear()
 
 
 def write_atomic(path: Path, data: bytes) -> None:
@@ -709,6 +1152,62 @@ def write_atomic(path: Path, data: bytes) -> None:
     os.fsync(tmp.fileno())
     temp_name = tmp.name
   os.replace(temp_name, path)
+
+
+def save_apn_label(signature: str, label: str, fields: dict[str, Any]) -> None:
+  labels = read_apn_labels()
+  labels[signature] = {
+    "label": label.strip(),
+    "fields": fields,
+    "updatedAt": time.time(),
+  }
+  write_atomic(APN_LABELS_PATH, (json.dumps(labels, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+
+
+def delete_apn_label(signature: str) -> None:
+  labels = read_apn_labels()
+  if signature in labels:
+    labels.pop(signature, None)
+    write_atomic(APN_LABELS_PATH, (json.dumps(labels, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+
+
+def read_can_labels() -> dict[str, dict[str, Any]]:
+  data = read_json_file(CAN_LABELS_PATH)
+  return data if isinstance(data, dict) else {}
+
+
+def list_can_labels() -> list[dict[str, Any]]:
+  labels = read_can_labels()
+  items: list[dict[str, Any]] = []
+  for signal_id, entry in labels.items():
+    if not isinstance(entry, dict):
+      continue
+    updated_at = float(entry.get("updatedAt", 0.0) or 0.0)
+    items.append({
+      "id": signal_id,
+      "label": str(entry.get("label", "")).strip(),
+      "meta": entry.get("meta", {}) if isinstance(entry.get("meta"), dict) else {},
+      "updatedAt": updated_at,
+    })
+  items.sort(key=lambda item: item["updatedAt"], reverse=True)
+  return items
+
+
+def save_can_label(signal_id: str, label: str, meta: dict[str, Any]) -> None:
+  labels = read_can_labels()
+  labels[signal_id] = {
+    "label": label.strip(),
+    "meta": meta,
+    "updatedAt": time.time(),
+  }
+  write_atomic(CAN_LABELS_PATH, (json.dumps(labels, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+
+
+def delete_can_label(signal_id: str) -> None:
+  labels = read_can_labels()
+  if signal_id in labels:
+    labels.pop(signal_id, None)
+    write_atomic(CAN_LABELS_PATH, (json.dumps(labels, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
 
 
 def safe_utf8(data: bytes) -> tuple[bool, str]:
@@ -845,6 +1344,113 @@ def param_value(params: dict[str, dict[str, Any]], key: str, fallback: Any = "-"
   return value
 
 
+def read_param_bytes(key: str) -> bytes | None:
+  path = params_dir() / key
+  if not path.exists():
+    return None
+  try:
+    return path.read_bytes()
+  except Exception:
+    return None
+
+
+def read_memory_param_bytes(key: str) -> bytes | None:
+  params = memory_params()
+  if params is None:
+    return None
+  try:
+    raw = params.get(key)
+    if isinstance(raw, str):
+      return raw.encode("utf-8")
+    return raw
+  except Exception:
+    return None
+
+
+def read_param_text(key: str) -> str:
+  raw = read_param_bytes(key)
+  if not raw:
+    return ""
+  try:
+    return raw.decode("utf-8", errors="ignore").strip()
+  except Exception:
+    return ""
+
+
+def read_memory_param_text(key: str) -> str:
+  params = memory_params()
+  if params is None:
+    return ""
+  try:
+    raw = params.get(key)
+  except Exception:
+    return ""
+  if not raw:
+    return ""
+  if isinstance(raw, str):
+    return raw.strip()
+  try:
+    return raw.decode("utf-8", errors="ignore").strip()
+  except Exception:
+    return ""
+
+
+def write_memory_param_text(key: str, value: str) -> bool:
+  params = memory_params()
+  if params is None:
+    return False
+  try:
+    params.put(key, value)
+    return True
+  except Exception:
+    return False
+
+
+def parse_json_text(raw: str) -> dict[str, Any]:
+  text = str(raw or "").strip()
+  if not text:
+    return {}
+  try:
+    value = json.loads(text)
+  except Exception:
+    return {}
+  return value if isinstance(value, dict) else {}
+
+
+def normalize_fake_long_test_body(body: dict[str, Any]) -> dict[str, Any]:
+  button = str(body.get("button", "")).strip().lower()
+  if button not in {"main", "cancel", "res", "set", "unpress"}:
+    raise ValueError("button must be one of: main, cancel, res, set, unpress")
+
+  bus = "camera"
+
+  mode = str(body.get("mode", "tap")).strip().lower()
+  mode_aliases = {
+    "tap": "tap",
+    "press": "press",
+    "hold": "press",
+    "release": "release",
+    "unpress": "release",
+  }
+  mode = mode_aliases.get(mode, mode)
+  if mode not in {"tap", "press", "release"}:
+    raise ValueError("mode must be one of: tap, press, release")
+
+  repeats = max(1, min(12, int(body.get("repeats", 1) or 1)))
+  hold_frames = max(0, min(40, int(body.get("holdFrames", 0) or 0)))
+
+  return {
+    "source": "web-debug",
+    "button": button,
+    "bus": bus,
+    "mode": mode,
+    "repeats": repeats,
+    "holdFrames": hold_frames,
+    "sentAtMs": int(time.time() * 1000),
+    "note": str(body.get("note", "") or "").strip(),
+  }
+
+
 def build_meta() -> dict[str, Any]:
   now = time.monotonic()
   if _META_CACHE["value"] is not None and now < _META_CACHE["expires_at"]:
@@ -880,10 +1486,12 @@ def build_meta() -> dict[str, Any]:
   return payload
 
 
-def build_status() -> dict[str, Any]:
+def build_status(compact: bool = False) -> dict[str, Any]:
   now = time.monotonic()
-  if _STATUS_CACHE["value"] is not None and now < _STATUS_CACHE["expires_at"]:
-    return _STATUS_CACHE["value"]
+  cache_key = "compact_value" if compact else "value"
+  cache_expires_key = "compact_expires_at" if compact else "expires_at"
+  if _STATUS_CACHE[cache_key] is not None and now < _STATUS_CACHE[cache_expires_key]:
+    return _STATUS_CACHE[cache_key]
 
   params = param_map()
   live = LIVE_READER.snapshot()
@@ -923,7 +1531,6 @@ def build_status() -> dict[str, Any]:
   acc_speed = format_speed(getattr(getattr(car_state, "cruiseState", None), "speedCluster", 0.0), is_metric) if car_seen and bool(getattr(car_state.cruiseState, "available", False)) else "-"
   car_voltage_raw = getattr(peripheral_state, "voltage", 0) if peripheral_seen else 0
   car_voltage = format_voltage(car_voltage_raw) if car_voltage_raw else "-"
-
   status_bits = [openpilot_state]
   status_bits.append("ONROAD" if is_onroad else "OFFROAD")
   if panda_seen:
@@ -1025,9 +1632,173 @@ def build_status() -> dict[str, Any]:
       "drivingModel": param_value(params, "DrivingModel", "-"),
       "drivingModelVersion": param_value(params, "DrivingModelVersion", "-"),
     },
+    "canDebug": {
+      "available": False,
+      "error": "CAN 디버그는 별도 요청으로 갱신됩니다.",
+      "updatedAt": time.time(),
+      "entries": [],
+      "savedLabels": [],
+    },
   }
-  _STATUS_CACHE["value"] = payload
-  _STATUS_CACHE["expires_at"] = now + STATUS_CACHE_TTL
+  if compact:
+    payload = {
+      "runtime": payload["runtime"],
+      "apn": payload["apn"],
+      "device": {},
+      "openpilot": {},
+      "vehicle": {},
+      "canDebug": payload["canDebug"],
+    }
+  _STATUS_CACHE[cache_key] = payload
+  _STATUS_CACHE[cache_expires_key] = now + STATUS_CACHE_TTL
+  return payload
+
+
+def build_can_debug() -> dict[str, Any]:
+  now = time.monotonic()
+  if _CAN_DEBUG_CACHE["value"] is not None and now < _CAN_DEBUG_CACHE["expires_at"]:
+    return _CAN_DEBUG_CACHE["value"]
+
+  params = param_map()
+  live = LIVE_READER.snapshot()
+  is_metric = bool(param_value(params, "IsMetric", False))
+  car_state = live.get("carState")
+  seen = live.get("seen", {})
+  car_seen = bool(seen.get("carState"))
+
+  vehicle_status_entries = build_vehicle_status_label_entries(car_state if car_seen else None, is_metric)
+  can_snapshot = CAN_READER.snapshot()
+  can_labels = {item["id"]: item for item in list_can_labels()}
+  observed_now = time.time()
+
+  current_entries = vehicle_status_entries + list(can_snapshot.get("entries", []))
+  current_ids = set()
+  for entry in current_entries:
+    entry_id = entry["id"]
+    current_ids.add(entry_id)
+    _CAN_DEBUG_OBSERVED[entry_id] = {
+      **entry,
+      "live": True,
+      "lastSeenAt": observed_now,
+    }
+
+  stale_cutoff = observed_now - CAN_DEBUG_STALE_RETENTION_SEC
+  expired_ids = [
+    entry_id for entry_id, cached in _CAN_DEBUG_OBSERVED.items()
+    if float(cached.get("lastSeenAt", 0.0) or 0.0) < stale_cutoff
+  ]
+  for entry_id in expired_ids:
+    _CAN_DEBUG_OBSERVED.pop(entry_id, None)
+
+  entries = []
+  for entry_id, entry in _CAN_DEBUG_OBSERVED.items():
+    live_now = entry_id in current_ids
+    saved = can_labels.get(entry_id, {})
+    last_seen_at = float(entry.get("lastSeenAt", 0.0) or 0.0)
+    entries.append({
+      **entry,
+      "live": live_now,
+      "lastSeenAt": last_seen_at,
+      "lastSeenAgeSec": max(0.0, observed_now - last_seen_at) if last_seen_at > 0.0 else None,
+      "label": saved.get("label", "-"),
+      "updatedAt": saved.get("updatedAt", 0.0),
+    })
+
+  entries.sort(key=lambda item: (
+    0 if item.get("live") else 1,
+    0 if item.get("kind") == "status" else 1,
+    str(item.get("title", "")),
+  ))
+
+  payload = {
+    "available": bool(entries),
+    "error": "" if entries else can_snapshot.get("error", LIVE_READER.error),
+    "updatedAt": can_snapshot.get("updatedAt", time.time()),
+    "entries": entries,
+    "savedLabels": list(can_labels.values()),
+  }
+  _CAN_DEBUG_CACHE["value"] = payload
+  _CAN_DEBUG_CACHE["expires_at"] = now + CAN_DEBUG_CACHE_TTL
+  return payload
+
+
+def build_debug() -> dict[str, Any]:
+  now = time.monotonic()
+  if _DEBUG_CACHE["value"] is not None and now < _DEBUG_CACHE["expires_at"]:
+    return _DEBUG_CACHE["value"]
+
+  params = param_map()
+  live = LIVE_READER.snapshot()
+  is_metric = bool(param_value(params, "IsMetric", False))
+
+  car_state = live.get("carState")
+  selfdrive_state = live.get("selfdriveState")
+  panda_states = live.get("pandaStates", [])
+  seen = live.get("seen", {})
+
+  car_seen = bool(seen.get("carState"))
+  selfdrive_seen = bool(seen.get("selfdriveState"))
+  panda_seen = bool(seen.get("pandaStates")) and len(panda_states) > 0
+
+  fake_long_debug_raw = read_memory_param_text("FakeLongDebug")
+  fake_long_debug = parse_json_text(fake_long_debug_raw)
+  pending_test_raw = read_memory_param_text("FakeLongTestButton")
+  pending_test = parse_json_text(pending_test_raw)
+
+  cruise_available_debug = bool(fake_long_debug.get("cruiseAvailable", False))
+  cruise_enabled_debug = bool(fake_long_debug.get("cruiseEnabled", False))
+
+  safety_param = next((int(p.safetyParam) for p in panda_states), 0) if panda_seen else 0
+  controls_allowed = any(bool(p.controlsAllowed) for p in panda_states) if panda_seen else False
+  ignition = any(bool(p.ignitionLine or p.ignitionCan) for p in panda_states) if panda_seen else False
+
+  if not bool(param_value(params, "FakeLongTestUI", False)):
+    safety_hint = "FakeLongTestUI가 꺼져 있으면 웹 디버그 버튼이 차량으로 전송되지 않습니다."
+    safety_hint_level = "warn"
+  elif not bool(getattr(live.get("deviceState"), "started", False)) if live.get("available") else True:
+    safety_hint = "오프로드 상태에서는 차량 반응을 확인할 수 없습니다."
+    safety_hint_level = "neutral"
+  elif not cruise_available_debug:
+    safety_hint = "현재 ACC AVAILABLE 상태가 아니어서 차량이 SET/RES/MAIN 버튼을 무시할 수 있습니다."
+    safety_hint_level = "warn"
+  elif not cruise_enabled_debug:
+    safety_hint = "GM safety상 SET/RES/CANCEL/UNPRESS는 ACC가 이미 engaged 상태일 때만 통과합니다. 먼저 실차 핸들로 ACC를 활성화한 뒤 시험하세요."
+    safety_hint_level = "warn"
+  else:
+    safety_hint = "현재 조건상 웹 명령은 carcontroller까지 들어갑니다. 여기서도 반응이 없으면 차량이 synthetic 버튼 프레임을 거부하는 단계입니다."
+    safety_hint_level = "success"
+
+  payload = {
+    "updatedAt": time.time(),
+    "runtime": {
+      "onroad": bool(getattr(live.get("deviceState"), "started", False)) if live.get("available") else False,
+      "engaged": bool(getattr(selfdrive_state, "active", False)) if selfdrive_seen else False,
+      "enabled": bool(getattr(selfdrive_state, "enabled", False)) if selfdrive_seen else False,
+      "controlsAllowed": controls_allowed,
+      "ignition": ignition,
+      "safetyParam": safety_param,
+      "vehicleSpeed": format_speed(getattr(car_state, "vEgoCluster", getattr(car_state, "vEgo", 0.0)), is_metric) if car_seen else "-",
+      "accSpeed": format_speed(getattr(getattr(car_state, "cruiseState", None), "speedCluster", 0.0), is_metric) if car_seen and bool(getattr(car_state.cruiseState, "available", False)) else "-",
+      "accAvailable": bool(getattr(getattr(car_state, "cruiseState", None), "available", False)) if car_seen else False,
+      "accEnabled": bool(getattr(getattr(car_state, "cruiseState", None), "enabled", False)) if car_seen else False,
+      "fakeLong": bool(param_value(params, "FakeLong", False)),
+      "fakeLongTestUI": bool(param_value(params, "FakeLongTestUI", False)),
+      "apnFakeLong": bool(param_value(params, "APNFakeLong", False)),
+    },
+    "safetyHint": {
+      "message": safety_hint,
+      "level": safety_hint_level,
+      "cruiseAvailable": cruise_available_debug,
+      "cruiseEnabled": cruise_enabled_debug,
+    },
+    "fakeLongDebug": fake_long_debug,
+    "fakeLongDebugRaw": fake_long_debug_raw or "{}",
+    "pendingTest": pending_test,
+    "pendingTestRaw": pending_test_raw,
+  }
+
+  _DEBUG_CACHE["value"] = payload
+  _DEBUG_CACHE["expires_at"] = now + DEBUG_CACHE_TTL
   return payload
 
 
@@ -1081,22 +1852,35 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
   def do_GET(self) -> None:
     parsed = urlparse(self.path)
+    query: dict[str, str] = {}
+    if parsed.query:
+      for chunk in parsed.query.split("&"):
+        if "=" in chunk:
+          key, value = chunk.split("=", 1)
+          query[key] = value
     if parsed.path == "/api/meta":
       self.send_json(build_meta())
       return
+    if parsed.path == "/api/apn-labels":
+      self.send_json({"labels": list_apn_labels()})
+      return
+    if parsed.path == "/api/can-labels":
+      self.send_json({"labels": list_can_labels()})
+      return
     if parsed.path == "/api/status":
-      self.send_json(build_status())
+      detail = unquote(query.get("detail", "full")).lower()
+      self.send_json(build_status(compact=detail != "full"))
+      return
+    if parsed.path == "/api/can-debug":
+      self.send_json(build_can_debug())
+      return
+    if parsed.path == "/api/debug":
+      self.send_json(build_debug())
       return
     if parsed.path == "/api/stats":
       self.send_json(build_stats())
       return
     if parsed.path == "/api/logs":
-      query = {}
-      if parsed.query:
-        for chunk in parsed.query.split("&"):
-          if "=" in chunk:
-            key, value = chunk.split("=", 1)
-            query[key] = value
       self.send_json(build_logs(unquote(query.get("source", "tmux"))))
       return
     if parsed.path == "/api/params":
@@ -1108,6 +1892,55 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
   def do_POST(self) -> None:
     parsed = urlparse(self.path)
+    if parsed.path == "/api/apn-labels":
+      try:
+        payload = self.read_json()
+        signature = str(payload.get("signature", "")).strip()
+        label = str(payload.get("label", "")).strip()
+        fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
+        if not signature:
+          self.send_json({"error": "signature is required"}, status=400)
+          return
+        if not label:
+          self.send_json({"error": "label is required"}, status=400)
+          return
+        save_apn_label(signature, label, fields)
+        self.send_json({"ok": True, "labels": list_apn_labels()})
+      except Exception as exc:
+        self.send_json({"error": str(exc)}, status=400)
+      return
+
+    if parsed.path == "/api/can-labels":
+      try:
+        payload = self.read_json()
+        signal_id = str(payload.get("id", "")).strip()
+        label = str(payload.get("label", "")).strip()
+        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        if not signal_id:
+          self.send_json({"error": "id is required"}, status=400)
+          return
+        if not label:
+          self.send_json({"error": "label is required"}, status=400)
+          return
+        save_can_label(signal_id, label, meta)
+        self.send_json({"ok": True, "labels": list_can_labels()})
+      except Exception as exc:
+        self.send_json({"error": str(exc)}, status=400)
+      return
+
+    if parsed.path == "/api/debug/fake-long-test":
+      try:
+        payload = normalize_fake_long_test_body(self.read_json())
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if not write_memory_param_text("FakeLongTestButton", encoded):
+          path = params_dir() / "FakeLongTestButton"
+          write_atomic(path, encoded.encode("utf-8"))
+        invalidate_runtime_caches()
+        self.send_json({"ok": True, "command": payload, "debug": build_debug()})
+      except Exception as exc:
+        self.send_json({"error": str(exc)}, status=400)
+      return
+
     if not parsed.path.startswith("/api/params/"):
       self.send_json({"error": "unsupported endpoint"}, status=404)
       return
@@ -1129,6 +1962,24 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
   def do_DELETE(self) -> None:
     parsed = urlparse(self.path)
+    if parsed.path.startswith("/api/apn-labels/"):
+      signature = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+      if not signature:
+        self.send_json({"error": "signature is required"}, status=400)
+        return
+      delete_apn_label(signature)
+      self.send_json({"ok": True, "labels": list_apn_labels()})
+      return
+
+    if parsed.path.startswith("/api/can-labels/"):
+      signal_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+      if not signal_id:
+        self.send_json({"error": "id is required"}, status=400)
+        return
+      delete_can_label(signal_id)
+      self.send_json({"ok": True, "labels": list_can_labels()})
+      return
+
     if not parsed.path.startswith("/api/params/"):
       self.send_json({"error": "unsupported endpoint"}, status=404)
       return

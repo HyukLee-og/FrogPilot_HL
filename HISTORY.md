@@ -1,6 +1,246 @@
 # frogpilot-testing-v1 작업 이력 / 인수인계 문서
 
-최종 갱신: 2026-03-22
+최종 갱신: 2026-04-05
+
+## 추가: 2026-04-04 ~ 2026-04-05 대시보드 경량화 / seatbelt bypass / 정차 오버레이 / UTM 빌드 경로 정리
+
+이 섹션은 `4b7feec3` 이후부터 2026-04-05 현재까지 진행한 웹 대시보드 경량화, GM fake-long 테스트 경로 재정리, seatbelt bypass 토글, seatbelt HUD 아이콘, `P + standstill` 정차 오버레이, 자동 밝기 추가 보정, UTM build ABI 문제 정리 내역을 이어서 정리한다.
+
+### 1. 웹 대시보드 경량화 + 디버그탭 재정리
+
+관련 파일:
+
+- `tools/device_dashboard_mock/server.py`
+- `tools/device_dashboard_mock/index.html`
+- `tools/device_dashboard_mock/app.js`
+- `tools/device_dashboard_mock/styles.css`
+
+#### 변경 이유
+
+- 주행 중 웹세팅 접속 또는 디버그/모니터링 사용 시 `commIssue`, `locationd`, `liveParameters`, `alertDebug` 류 invalid가 잦게 발생했음
+- 원인은 상태탭/디버그탭/CAN 보기에서 live polling이 너무 공격적이고, 모바일 레이아웃도 세로 공간을 과하게 소비하던 점이었음
+
+#### 수정 내용
+
+- 상단 헤더를 `Openpilot Console` 로 통일
+- 상태탭:
+  - 상단 핵심 요약만 기본 노출
+  - 하단 상세는 `더보기`를 눌렀을 때만 렌더
+  - 기본 요청은 `lite` 상태로 내려 무거운 상세 데이터를 아예 만들지 않도록 변경
+- 디버그탭:
+  - `SET / RES / MAIN / CANCEL / UNPRESS`
+  - camera-only GM synthetic button debug controls 추가
+  - 자동 polling 기본 `OFF`
+  - `디버그 새로고침` 버튼 추가
+  - `실시간 보기` 토글을 켠 경우에만 주기 polling
+- CAN 모니터링:
+  - status 탭에서 항상 돌지 않고, 사용자가 명시적으로 눌렀을 때만 동작하도록 변경
+- 통계탭:
+  - 모바일에서 한 화면에 더 많은 값을 보이도록 카드/섹션 밀도 재구성
+  - 중복되는 총 주행 시간/거리/횟수류를 제거
+  - `주행 성향`, `날씨별 주행`, `이벤트 / 개구리 통계`는 제거하고 핵심 지표만 남김
+
+#### 결과
+
+- 웹세팅의 기본 진입 비용이 줄어듦
+- 디버그용 live polling은 opt-in 구조가 됨
+- 주행 중엔 “무거운 패널을 기본으로 열면 바로 부하가 생기는” 형태가 아니라, 필요한 정보만 눌러서 보는 구조로 바뀜
+
+### 2. GM fake-long / synthetic button test 경로 재정리
+
+관련 파일:
+
+- `opendbc_repo/opendbc/car/gm/carcontroller.py`
+- `opendbc_repo/opendbc/car/gm/carstate.py`
+- `opendbc_repo/opendbc/car/interfaces.py`
+- `opendbc_repo/opendbc/car/gm/cluster_speed.py`
+- `frogpilot/frogpilot_process.py`
+- `frogpilot/common/frogpilot_variables.py`
+- `frogpilot/ui/qt/offroad/longitudinal_settings.cc`
+- `frogpilot/ui/qt/offroad/vehicle_settings.cc`
+- `frogpilot/ui/qt/offroad/vehicle_settings.h`
+
+#### 확인된 사실
+
+- `cancel` 은 synthetic path에서도 실제 반응
+- `set/res` 는 memory param → web debug → carcontroller 경로까지 정상 진입하지만, 차량이 synthetic frame을 받아들이지 않음
+- `panda / gm safety / forwarding` 본체는 예전 성공 시점과 구조 차이가 거의 없고, 주원인일 가능성이 낮음
+- 실제 가장 큰 차이는 `carcontroller.py` 쪽 synthetic test path가 예전보다 복잡해진 점이었음
+
+#### 수정 내용
+
+- 테스트 버튼 경로를 메인 fake-long/APN 상태머신과 분리
+- `FakeLongTestUI && stock ACC + forward camera path` 가드 복원
+- pending repeat/release 상태를 새 테스트 입력 전에 정리
+- 버스 선택은 다시 `camera-only` 위주로 단순화
+- 웹 디버그탭에서도 `camera-only` 기준으로 다시 정리
+- GM cluster/current speed를 보정 lookup table로 다시 계산하도록 추가
+  - `cluster_speed.py` helper 추가
+  - `carstate.py` 에서 `vEgoCluster` 보정
+
+#### 현재 결론
+
+- `web debug -> memory param -> carcontroller` 경로는 정상
+- `FakeLongTestUI` 는 여전히 테스트를 위해 필요
+- 남은 핵심 미해결은 `synthetic SET/RES 수용성` 이고, 이는 `panda` 보다는 synthetic button cadence/수용 조건 문제에 더 가까움
+
+### 3. resumeRequired 우선순위 정리
+
+관련 파일:
+
+- `selfdrive/selfdrived/events.py`
+- `selfdrive/selfdrived/selfdrived.py`
+
+#### 문제
+
+- 오토홀드/정차 상황에서 `resumeRequired`가 떠야 하는데, 운전자 부주의 또는 `belowSteerSpeed`가 위로 올라오는 경우가 있었음
+
+#### 수정
+
+- `resumeRequired` 가 활성인 프레임에서는 다음 이벤트를 제거:
+  - `preDriverDistracted`
+  - `promptDriverDistracted`
+  - `driverDistracted`
+  - `preDriverUnresponsive`
+  - `promptDriverUnresponsive`
+  - `driverUnresponsive`
+  - `belowSteerSpeed`
+
+#### 결과
+
+- 오토홀드 정차 상황에서는 `resumeRequired` 가 우선 표시됨
+- 같은 상황에서 불필요한 운전자 부주의 / 저속 조향 경고가 끼어들지 않도록 정리됨
+
+### 4. 안전벨트 미착용 bypass 토글 + HUD 아이콘
+
+관련 파일:
+
+- `common/params_keys.h`
+- `selfdrive/ui/qt/offroad/settings.cc`
+- `selfdrive/selfdrived/selfdrived.py`
+- `selfdrive/ui/qt/onroad/hud.cc`
+- `selfdrive/ui/qt/onroad/hud.h`
+- `files/icons/seatbelt.png`
+
+#### 수정 내용
+
+- `More` 에 `안전벨트 착용 여부 미확인` 토글 추가
+- 이 토글이 켜졌을 때는 `seatbeltNotLatched` 이벤트를 selfdrived 쪽에서 제거
+- 현재 속도 패널 좌측 상단에 `seatbelt.png` 를 추가
+  - `carState.seatbeltUnlatched = true` 일 때만 표시
+  - 착용 시 즉시 숨김
+
+#### 결과
+
+- 테스트/특수 상황에서 seatbelt no-entry만 우회할 수 있음
+- 동시에 화면에서도 belt 상태를 즉시 확인 가능
+
+### 5. `P + 정차` 오버레이를 하단 카드에서 alert-style full-screen dim으로 재설계
+
+관련 파일:
+
+- `selfdrive/ui/qt/onroad/alerts.cc`
+- `selfdrive/ui/qt/onroad/alerts.h`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h`
+- `files/icons/parking.png`
+
+#### 요구사항
+
+- 기존 하단 정차 카드가 아니라, `resumeRequired` 처럼 전체 화면 dim
+- 상단 제목 줄에 `parking.png + 정차중`
+- 그 아래에 정차 타이머
+
+#### 구현 내용
+
+- `parkedStandstill` MID overlay를 alerts layer에 합성
+- `P + standstill + stopped_timer` 조건일 때만 활성
+- 기존 FrogPilot 하단 `정차중` 카드는 제거
+- `resumeRequired` 등 실제 alert가 있을 경우 그쪽이 우선
+
+#### UTM preview 보조 코드
+
+- `selfdrive/ui/qt/widgets/cameraview.cc`
+  - `ONROAD_ROUTE_IMAGE` 가 있으면 VIPC startup을 건너뛰어 preview용 static route background 사용
+- `selfdrive/ui/qt/onroad/alerts.cc`
+  - `PARKED_STANDSTILL_PREVIEW` 환경변수로 overlay만 강제 preview 가능하도록 추가
+
+### 6. 자동 밝기 추가 보정
+
+관련 파일:
+
+- `selfdrive/ui/ui.cc`
+- `selfdrive/ui/ui_state.py`
+- `system/hardware/tici/hardware.h`
+
+#### 수정
+
+- `AUTO_BRIGHTNESS_DARK_THRESHOLD`
+  - `4.0 -> 2.0`
+
+#### 의도
+
+- “비교적 밝은데도 화면이 너무 쉽게 어두워진다”는 피드백에 맞춰
+- 일반 저조도에서는 기존 floor를 더 오래 유지하고, 더 어두운 환경에서만 floor 아래로 떨어지게 조정
+
+### 7. UTM build ABI 문제와 최종 해결
+
+이 구간에서 가장 중요했던 문제다.
+
+#### 발생한 문제
+
+- 최신 `정차중` UI를 UTM에서 빌드해 `192.168.0.7`에 올리면:
+  - `./ui: symbol lookup error: ./ui: undefined symbol: _ZNK11QPushButton9hitButtonERK6QPoint, version Qt_5`
+- 그래서 기기에서는 이전 정상 UI (`a26f9dc...`)로 되돌려야 했음
+
+#### 실제 원인
+
+- UTM 작업 디렉터리가 로컬 최신 소스가 아닌 오래된 clone (`d066851`) 상태였음
+- 그 상태에 stale build artifact 까지 섞여, 잘못된 device-ABI binary가 만들어짐
+
+#### 해결
+
+- 최신 UI 관련 소스를 UTM clone에 다시 동기화
+- 아래 파일들을 clean source 기준으로 UTM에 덮어씀:
+  - `alerts.cc / alerts.h`
+  - `hud.cc / hud.h`
+  - `window.cc / window.h`
+  - `cameraview.cc`
+  - `ui.cc / ui_state.py`
+  - `frogpilot_annotated_camera.cc / .h`
+  - `parking.png / seatbelt.png`
+- UTM clone에서:
+  - `selfdrive/ui/ui`
+  - `common/params_pyx.so`
+  - `.sconsign.dblite`
+  - `*.o`
+  - `moc_*.cc`
+  를 지운 뒤 clean build 수행
+- 결과물:
+  - `selfdrive/ui/ui`
+    - `09ef153466fc15f014c807e3fb51107cb882c466`
+  - `common/params_pyx.so`
+    - `4116761a3b0fcce47b271f7b3727a6ef1ab57ca0`
+
+#### 배포 결과
+
+- 위 clean UTM build 결과물을 `192.168.0.7`에 배포
+- `comma.service: active`
+- 실행 중 확인:
+  - `./ui`
+  - `frogpilot.frogpilot_process`
+  - `./mapd`
+  - `tools.apn_bridge.apn_bridge`
+
+#### 인수인계 포인트
+
+- 이 구간 UI는 **기기 native build가 아니라 UTM clean build 기준**으로 다루는 것이 안전함
+- UTM에서 다시 작업할 때는:
+  1. 오래된 clone 여부 확인
+  2. 최신 UI 소스 동기화
+  3. stale object / `.sconsign` 제거
+  4. `tools/utm/build_device_abi.sh`
+  순서를 지켜야 함
 
 ## 추가: 2026-03-22 전원 종료 로직 복원 + 강제 전원 로직 비활성화 토글
 
@@ -1453,3 +1693,913 @@ Runtime / deploy 쪽:
 
 이 문서는 여기까지 작업한 모든 주요 변경과 시행착오를 기록한 기준 문서다.
 새 작업을 시작할 때는 `RELEASES.md` 가 아니라 이 파일부터 읽는 것을 권장한다.
+
+## 추가: 2026-03-24 ~ 2026-03-31 APN / SDI / Fake-Long / 웹 디버그 / UTM 디자인 작업
+
+이 섹션은 2026-03-24 이후 진행한 `APN 안전운전 모드`, `SDI 타입 해석`, `GM fake-long 버튼 스니핑`, `웹 디버그 대시보드`, `UTM onroad 프리뷰 디자인` 작업을 처음부터 이어서 정리한다.
+
+이 구간의 목적은 크게 5가지였다.
+
+1. `CarrotNavi(APN)` 에서 들어오는 카메라 / 구간단속 / 일반 SDI 정보를 정확히 해석하고 onroad UI에 반영
+2. 안전운전 모드(`routeActive = false`) 에서도 카메라/구간단속 정보가 있으면 onroad / fake-long에 전달
+3. GM stock ACC 차량에서 `FakeLong / APN-Fake-Long / FakeLongTestUI / 웹 디버그 버튼`을 통해 synthetic cruise button 테스트
+4. `웹세팅(device_dashboard_mock)` 을 주행 중에도 덜 무겁게 동작하게 경량화
+5. UTM 프리뷰로 보호구역 / 카메라 / 구간단속 / 일반 SDI 디자인을 계속 검증
+
+---
+
+## A. 작업 환경 / 장치 / 빌드 경로
+
+### 실기기
+
+- `192.168.0.11`
+  - 초반 APN / 자동밝기 / safety-driving-mode 카메라 표시 확인용
+- `10.85.212.127`
+  - 후반 주력 테스트 기기
+  - 웹세팅, fake-long, 디버그탭, 최신 APN/UI 반영 대부분 이 기기로 검증
+
+### UTM
+
+- IP: `192.168.64.3`
+- user: `hyuklee`
+- sysroot: `/home/hyuklee/comma-sysroot`
+
+### 배포/빌드에서 배운 점
+
+- `ui` 변경은 가급적 `UTM device-ABI 빌드` 후 기기에 복사
+- Python / web 파일은 기기에 직접 복사 후 서비스 재시작으로 충분
+- `기기 파일이 바뀌었다`와 `실제 서버 응답 / 실제 화면이 바뀌었다`는 다르므로:
+  - 웹은 반드시 `실제 HTML 응답` 확인
+  - UI는 가능하면 `UTM 캡처` 또는 `기기 화면`으로 검증
+- 한 번 `UTM`에서 빌드한 `ui`가 기기 Qt ABI와 맞지 않아 `QPushButton::hitButton` unresolved symbol로 죽은 적이 있음
+  - 이때는 이전 정상 `ui` 로 즉시 되돌림
+  - 이후 `device-ABI` 기준으로 다시 빌드하는 쪽으로 정리
+
+---
+
+## B. 자동 밝기(auto brightness) 분석과 수정
+
+### 문제
+
+- 저녁에 가로등/앞차 불빛이 있어도 밝기가 너무 빨리 `10%` 근처까지 내려감
+- 사용자가 원하는 동작은:
+  - `완전히 아주 어두울 때만 10 아래`
+  - `웬만한 저녁 / 가로등 있음 / 앞차 있음` 에서는 `10 이하로 내려가지 않기`
+
+### 분석
+
+- `selfdrive/ui/ui.cc`
+  - `wideRoadCameraState.exposureValPercent` 를 이용해 가짜 `light_sensor` 를 만듦
+  - 이후 밝기 계산에서 다시 `CIE 1931` 변환을 타면서 중간 밝기 구간이 두 번 눌림
+- 결과적으로 저녁 구간이 과도하게 어두워졌음
+
+### 수정
+
+- 완전 암흑에 가까운 구간에서만 `10 이하`가 허용되도록 기준 조정
+- 일반 저녁 / 부분 조명에서는 최소 바닥을 사실상 `10` 이상으로 유지
+
+### 기기 반영
+
+- 초기에 `192.168.0.11` 로 반영하여 사용자가 실제 야간 체감 확인
+
+### 상태
+
+- 이 부분은 사용자 요구대로 정리된 상태
+- 추가 조정이 필요하면 다시 `ui.cc` 곡선만 손보면 됨
+
+---
+
+## C. APN / CarrotNavi 브리지: 안전운전 모드 카메라 정보 살리기
+
+### 원래 문제
+
+- 경로 탐색(routeActive)이 아닐 때는 APN 브리지가 데이터를 막는 구조였음
+- 하지만 실제 Tmap 안전운전 모드에서도:
+  - 과속카메라
+  - 구간단속
+  정보는 들어옴
+- 웹 디버그에는 보이는데 onroad UI / fake-long 쪽에선 안 보이는 상황이 반복됨
+
+### 1차 수정
+
+- `tools/apn_bridge/apn_bridge.py`
+- `routeActive=false` 여도
+  - `camera`
+  - `section_camera`
+  - 거리 / 제한속도
+  가 있으면 `APNDataActive` 를 켜도록 수정
+- 대신 안전운전 모드에서 자주 헷갈리는
+  - `현재 도로 제한속도`
+  - `도로명`
+  은 계속 `routeActive=true` 일 때만 노출되게 유지
+
+### 2차 수정: onroad에는 안 뜨는 원인
+
+원인은 두 가지였다.
+
+1. `APNDataTimestamp`
+   - upstream payload time을 써서 freshness 판정이 엉킬 수 있었음
+   - `apn_bridge.py` 에서 `receivedAt` 기준으로 저장하도록 수정
+
+2. `APNNextSpeedLimit`
+   - `nSdiPlusSpeedLimit = 0` 인데도 그 값을 먼저 집어버려서
+   - `APNNextSpeedLimit = 0`
+   - 결과적으로 웹엔 raw가 보여도 onroad는 speed limit 없는 hazard로 봄
+   - base `nSdiSpeedLimit` 을 우선/대체 사용하도록 수정
+
+### 현재 상태
+
+- 안전운전 모드에서도 카메라/구간단속 정보는 `APNDataActive` 기준으로 내려감
+- `APNNextHazard`, `APNNextHazardDistance`, `APNNextSpeedLimit` 은 camera-only 상황에서도 memory param으로 유지
+- `APNSpeedLimit`, `APNRoadName` 은 routeActive 때만 신뢰하도록 유지
+
+### 관련 파일
+
+- `tools/apn_bridge/apn_bridge.py`
+- `frogpilot/common/frogpilot_variables.py`
+- `frogpilot/controls/lib/speed_limit_controller.py`
+- `selfdrive/ui/qt/onroad/hud.cc`
+
+---
+
+## D. APN / SDI 타입 해석: nSdiSection가 아니라 nSdiType 중심으로 재정리
+
+### 문제
+
+- 구간단속이 아닌데도 구간단속 아이콘이 뜨는 문제가 있었음
+- 원래 브리지 로직이 `nSdiSection > 0` 비슷한 조건에 과도하게 기대고 있었음
+- 실제로는 일반 카메라에도 `section` 성격의 부가값이 붙을 수 있어서 오분류됨
+
+### 정리된 해석
+
+- `nSdiType`
+  - 어떤 SDI인지 결정하는 메인 코드
+- `nSdiSection`
+  - 구간 관련 보조 상태값
+- `bSdiBlockSection`, `nSdiBlockType`, `nSdiBlockDist`, `nSdiBlockSpeed`
+  - 실제 구간 진행 여부/블록 상태를 보는 데 더 중요
+
+### 중요 전환점
+
+사용자가 `SdiCodeConvert.SdiType` 기준 authoritative mapping을 제공했고, 이걸 기준으로 해석 기준을 완전히 재정리함.
+
+핵심 결론:
+
+- 웹 라벨 시그니처의 `Txx` 는 `nSdiType` 와 동일
+- 예: `T29|S2|...` 에서 `T29 = 사고다발`
+- 따라서 `S2` 만 보고 구간단속이라고 판단하면 안 됨
+
+### 현재 카테고리 분류 기준
+
+`tools/apn_bridge/apn_bridge.py` 기준:
+
+- `camera` 로 처리
+  - `0, 1, 5, 6, 7, 8, 9, 10, 64, 65, 75, 76`
+- `section_camera` 로 처리
+  - `2, 3, 4, 84, 85`
+- 나머지
+  - `sdi:<type>`
+  - 일반 SDI로 분리
+
+### 현재 의미
+
+- 일반 과속/신호/후면/특수 단속은 `camera:*`
+- 구간단속 시작/끝/진행중/가변 구간단속은 `section_camera:*`
+- 보호구역, 휴게소, 사고다발, 낙석, 결빙, 재난 정보 등은 일반 `sdi:*`
+
+---
+
+## E. SDI 라벨링 / 웹 디버그 라벨 기능
+
+실차에서 타입 매핑을 더 쉽게 하려고 웹 디버그에 라벨 기능을 여러 번 붙였다.
+
+### SDI 시그니처 라벨
+
+- 현재 들어온 SDI를 시그니처로 보여줌
+  - 예: `T17|S2|P0|B0|BS0|C0|L0`
+- 현재 시그니처에 임시 라벨 저장 가능
+- JSON으로 보존
+- 나중에 이 파일을 읽어서 타입 해석 보강 가능
+
+### CAN / 차량 상태 라벨
+
+- 처음엔 CAN 후보만 저장하려 했지만
+- 이후 차량 상태 값도 같이 라벨 가능하게 확장
+- 다만 실차에서는 라벨링보다 “실시간 같이 보면서 잡는 방식”이 더 효율적이었음
+
+### 최근 관측값 유지
+
+- 신호가 잠깐 사라져도 바로 안 사라지게
+- `LIVE` / `RECENT` 표시 추가
+- 마지막 관측 시간 보존
+
+### 저장 위치
+
+- SDI 라벨: `/data/media/0/apn_bridge/sdi_labels.json`
+- CAN/차량 상태 라벨: `/data/media/0/button_sniff/can_labels.json`
+
+---
+
+## F. GM ACC 표시속도 / 현재속도 보정
+
+### 문제
+
+- GM 차량에서 클러스터에 보이는 ACC set 속도와 openpilot 내부 raw set speed가 다름
+- 사용자가 실차로 `계기판상 ACC 속도 ↔ 오픈파일럿상 ACC 속도` 대응표를 직접 제공함
+
+### 해결
+
+- `opendbc_repo/opendbc/car/gm/cluster_speed.py` 추가
+- ACC set speed용 보정 테이블 구현
+- `opendbc_repo/opendbc/car/gm/carstate.py`
+  - `cruiseState.speedCluster`
+  - `vEgoCluster`
+  를 보정값으로 채움
+- `opendbc_repo/opendbc/car/gm/carcontroller.py`
+  - fake-long / APN-fake-long 비교는 보정된 표시 ACC 속도 기준 사용
+
+### 결과
+
+- HUD에 보이는 ACC 속도는 계기판과 더 잘 맞음
+- 현재속도도 같은 계열 보정이 들어가서 표시 기준이 맞춰짐
+
+### 주의
+
+- 이건 “실제 cluster CAN 신호를 찾은 것”이 아니라 lookup table 기반 보정
+- 나중에 진짜 cluster CAN을 찾으면 보정층은 제거 가능
+
+---
+
+## G. APN-Fake-Long / fake-long 상태 표시와 현재 한계
+
+### 1. APN-Fake-Long 자체 활성 조건
+
+- `FakeLong` 메인 토글이 꼭 켜져 있지 않아도
+- `APNFakeLong` 만 켜져 있으면 controller 경로는 활성되게 정리
+
+### 2. HUD 주황/초록/파랑 표시 관련 문제
+
+사용자 기대:
+
+- 과속카메라 접근해 감속 중일 때만 주황색 목표 속도 깜빡임
+- 목표 속도 근처 도달 시 초록색
+- 카메라 지나고 원래 ACC로 복귀하면서 실제 `RES` 버튼 스니핑할 때만 파란색
+- OP 해제 시 파란 잔상 남지 않기
+
+시도한 수정:
+
+- `carcontroller.py` 에 `apnControlActive`, `apnRecoveryActive` 류 상태를 명확히 기록
+- `hud.cc` 쪽에서 이걸 더 직접적으로 읽도록 정리
+- `op_enabled` 아닐 때 세션 상태 클리어
+- 복귀 상태가 새 카메라에 의해 덮일 때 stale blue state 제거
+
+### 현재 상태
+
+- stale recovery/blue 문제는 여러 차례 줄였으나
+- synthetic `SET/RES` 자체가 완전히 먹지 않는 문제가 남아 있어 “표시와 실제 동작”의 완전 일치는 아직 미완료
+
+---
+
+## H. GM fake-long / 테스트 버튼 / 웹 디버그탭: 무엇이 되고 무엇이 안 되는가
+
+이 문서에서 가장 중요한 미해결 이슈다.
+
+### 원래 목표
+
+- stock ACC 차량에서 `SET / RES / MAIN / CANCEL / UNPRESS` 를 synthetic cruise button으로 보내서
+  - fake-long
+  - APN-fake-long
+  - 웹 디버그탭
+  - onroad FakeLongTestUI
+  전부 같은 경로로 검증하고 싶었음
+
+### 이미 해결된 것
+
+1. `FakeLongTestUI` / `FakeLong` / `APNFakeLong` 켜졌을 때 safety bit 경로
+   - `opendbc_repo/opendbc/car/interfaces.py`
+   - `frogpilot/frogpilot_process.py`
+   - live `FrogPilotCarParams` 와 persistent 모두에 fake-long button safety bit 동기화
+
+2. `FakeLongDebug` memory param
+   - `armed`, `paused`, `userSet`, `target`, `commanded`, `last`, `apn*`, `raw*` 등 노출
+
+3. 웹 디버그탭 → 백엔드 → memory param → carcontroller 경로
+   - 이 경로는 실제로 정상
+   - `FakeLongTestButton(memory)` 가 실제 소비됨
+   - `FakeLongDebug.last` 도 바뀜
+
+4. `cancel`
+   - synthetic 경로에서도 실제로 먹음
+
+### 실제로 막힌 지점
+
+- `SET / RES` 는 synthetic 경로에서 실제 ACC set speed를 안 바꿈
+- 여러 번 실차 캡처 결과:
+  - 실제 핸들 버튼: `0x1E1`, `src 0/130`
+  - synthetic 버튼: `0x1E1`, `src 192/194`
+  - payload 바이트 자체는 동일
+  - 그럼에도 `cancel`만 먹고 `set/res`는 무시
+
+### 비교해서 확인한 구조 차이
+
+예전 “잘 먹히던 시기”와 현재의 차이:
+
+- 예전:
+  - `FakeLongTestButton = "set:timestamp"` 같은 plain string
+  - `carcontroller.py` 가 그걸 직접 소비
+  - `camera-only`
+  - 단순 press + 짧은 delayed `UNPRESS`
+- 현재(문제 시점):
+  - 웹 JSON payload
+  - `pt/camera/both/obstacle/all`
+  - repeats / holdFrames / release mode
+  - APN 상태머신까지 섞인 복잡한 테스트 경로
+
+### 이번에 다시 되돌린 구조
+
+2026-03-31 기준 현재 코드:
+
+- `carcontroller.py`
+  - fake-long test payload는
+    - JSON
+    - legacy `"set:timestamp"` string
+    둘 다 허용
+  - fake-long button 경로를 `camera-only` 로 강제
+  - 기본 repeat count `1`
+  - default press/release 도 camera-only
+- `tools/device_dashboard_mock/server.py`
+  - 웹 디버그 버튼 payload는 bus 선택과 무관하게 `camera` 로 normalize
+- `tools/device_dashboard_mock/index.html`
+- `tools/device_dashboard_mock/app.js`
+  - 디버그탭 bus selector는 `카메라 송신 전용` 1개만 남김
+  - `PT/양쪽/레이더/전부` 프리셋 제거
+
+### 여기까지 내려온 결론
+
+- panda safety bit 경로가 아예 틀린 건 아님
+- 웹 디버그탭이 고장난 것도 아님
+- 현재 최상위 미해결은:
+  - **GM 차량이 synthetic `SET/RES`만 거부하고 `CANCEL`은 받아먹는 이유**
+
+### 다음 작업자에게 추천하는 다음 단계
+
+1. `camera-only` 로 단순화한 현 상태에서 다시 실차 테스트
+2. still fail이면:
+   - `0x1E1` 실차 핸들 입력과 synthetic 입력의
+     - press 길이
+     - release timing
+     - counter
+     - engaged 조건
+     차이를 더 파기
+3. 절대 “panda가 다 막고 있다”로 단정하지 말 것
+   - `cancel`은 이미 먹는다
+4. 반대로 “web/debug path가 고장”이라고도 단정하지 말 것
+   - param 소비와 `FakeLongDebug.last` 갱신은 이미 확인됨
+
+---
+
+## I. commIssue / locationd / alertDebug 폭주: 웹세팅 경량화
+
+### 문제
+
+- 주행 중 웹세팅이나 모니터링을 열면
+  - `commIssue`
+  - `locationd`
+  - `liveParameters`
+  - `liveTorqueParameters`
+  - `driverAssistance`
+  - `alertDebug`
+  등 경고가 한꺼번에 뜨는 경우가 있었음
+
+### 원인
+
+- 초기 웹 대시보드가 너무 공격적으로 정보를 불러왔음
+  - 상태
+  - 로그
+  - params
+  - 통계
+  - live CAN
+  를 동시에 많이 polling
+- 또 한동안 실시간 SSH 스트리밍/캡처도 겹쳐서 load를 키움
+
+### 해결 방향
+
+1. 상태탭 기본은 light
+   - `server.py`
+   - `/api/status?detail=lite`
+   - 상단 핵심 정보만 즉시 반환
+
+2. 세부 정보는 `더보기`
+   - `statusDetailsWrap`
+   - 눌러야 상세 상태 / CAN 등 polling
+
+3. CAN 모니터링은 기본 OFF
+   - 별도 버튼을 눌러야 `/api/can-debug`
+   - 평소엔 안 돌게
+
+4. 로그/통계도 lazy-load
+   - 탭 열기 전엔 불필요 polling 최소화
+
+5. `alertDebug` 같은 ignore 대상은 commIssue 범인처럼 보이지 않게 selfdrived 쪽 필터 조정
+   - `selfdrive/selfdrived/selfdrived.py`
+   - `selfdrive/selfdrived/events.py`
+
+### 현재 효과
+
+- 이전보다 웹세팅 열 때 리소스 부담이 줄었음
+- 다만 아주 공격적인 실시간 캡처를 또 켜면 여전히 부담 줄 수 있음
+
+### 원칙
+
+- 주행 중에는 SSH 실시간 스트리밍보다 기기 내부 파일 캡처 후 나중에 읽기
+
+---
+
+## J. 저부하 캡처 / 모니터링 전략
+
+### 실패한 방식
+
+- 실시간 SSH 출력 + high-frequency CAN 구독
+- 결과:
+  - 워닝 이벤트 다수
+  - 리소스 급증
+  - 한 번은 메모리 경고/불안정성까지 유발
+
+### 이후 정리
+
+- 시트 진동 스니핑용 별도 스크립트는 제거
+- `vehicle_sniffer.py` 류 실험 경로 정리
+
+### 현재 원칙
+
+- 필요할 때만 짧은 low-overhead file capture
+- 주행 끝나고 파일 분석
+
+### 참고 파일
+
+- `tools/debug/fake_long_capture.py`
+- `tools/debug/run_fake_long_capture.sh`
+- `tools/debug/stop_fake_long_capture.sh`
+
+이 경로는 반복적으로 수정되었고, 현재도 “필요할 때만 켜는 것”이 원칙이다.
+
+---
+
+## K. 기기 웹세팅(device_dashboard_mock) 디자인 / UX 정리
+
+2026-03-29~03-31 구간에 웹 대시보드 UI를 크게 손봤다.
+
+### 상단 헤더
+
+- 제목을 `Openpilot Console` 로 통일
+- 연결 상태는 긴 카드 대신
+  - 초록 점
+  - `연결됨`
+  텍스트만 남긴 소형 칩으로 축소
+- 모바일/PC 모두 한 줄 배치를 유지하도록 CSS 정리
+
+### 상태탭
+
+- 상단 핵심 요약만 항상 노출
+- 상세 상태는 `더보기`
+- 모바일 기준으로 세로 높이 줄이기
+
+### 통계탭
+
+- 한때 카드가 너무 많아 모바일에서 스크롤 과다
+- 이후 계속 압축하면서:
+  - 겹치는 값 제거
+  - `운행 개요` 섹션 삭제
+  - `주행 성향`, `날씨별 주행`, `이벤트 / 개구리 통계` 제거
+  - `긴급 제동 경고`만 남김
+  - hero / pulse / summary 구조 재정리
+
+중요한 해석:
+
+- `총 주행 횟수`, `총 주행 거리`, `총 주행 시간`
+  - openpilot engaged 기준이 아니라, FrogPilot tracked driving 기준에 가까움
+- `최고 가속도`
+  - 수동 운전 때 값도 포함될 수 있음
+
+### 디버그탭
+
+- 새 탭 `디버그` 추가
+- 목적:
+  - fake-long button test
+  - runtime/safety 상태 확인
+  - 마지막 payload / FakeLongDebug viewer 확인
+
+### 2026-03-31 기준 디버그탭 최종 상태
+
+- `SET / RES / MAIN / CANCEL / UNPRESS`
+- bus는 `카메라 송신 전용`
+- `tap / press / release`
+- repeats / hold frames 선택 가능
+
+주의:
+
+- 실제 버튼이 차에 먹으려면 `FakeLongTestUI = ON`
+- `FakeLong = OFF`, `APNFakeLong = OFF`, `FakeLongTestUI = ON` 조합이 디버그 실험엔 가장 깔끔
+
+---
+
+## L. onroad SDI / APN 디자인 작업 (UTM preview 기반)
+
+이 구간에서 UTM을 매우 많이 사용했다.
+
+### 보호구역 계열
+
+최종 현재 방향:
+
+- `20, 21` 어린이 보호
+- `66, 67` 장애인 보호
+- `68, 69` 노인 보호
+- `70, 71` 주민 보호
+
+표시 스타일:
+
+- 흰 원
+- 두꺼운 파란 외곽 띠
+- 검은 텍스트
+- 아래 거리 박스는 단속 아이콘급으로 확대
+
+### 단속 카메라 계열 세부 디자인
+
+- `1, 7, 8, 75`
+  - 일반 과속단속
+  - 숫자 중심형
+  - 일반 속도단속은 `단속` 텍스트 제거
+- `0, 6, 76`
+  - 신호단속 계열
+- `5`
+  - 숫자 없이 `꼬리물기`
+- `9`
+  - 숫자 없이 `버스 차로`
+- `10`
+  - 숫자 없이 `가변 차로`
+- `64`
+  - 숫자 없이 `노후`
+- `65`
+  - 숫자 없이 `차선변경`
+- `75`
+  - 숫자 위로 올리고 아래에 `후면`
+- `76`
+  - 기존 신호과속 형식 + 아래 `후면`
+
+### 구간단속 진행 중
+
+여러 안을 시도했다.
+
+시도한 안:
+
+- 노란색 유지
+- `구간중` 상단 띠
+- 바깥 진행 링
+- `잔여` 하단 박스
+- 아이콘 우측 세로 진행바
+
+사용자 피드백 후 현재 방향:
+
+- 상단 `구간중` 띠 제거
+- 바깥 진행 링 제거
+- 아이콘 우측 빨간 세로 진행바
+- 아래 `잔여` 박스 유지
+- 아이콘 본체는 기존보다 어두운 빨간 계열로 조정
+
+### 주의 / 위험 SDI
+
+- 처음에는 삼각형 표지판풍으로 여러 번 시도
+- 이후 `노란 원 + 빨간 테두리 + 검은 글씨` 로 방향 전환
+- 하지만 최종적으로 사용자가:
+  - “주의/경고 타입 SDI는 live onroad UI에는 안 뜨게”
+  요청
+
+현재 상태:
+
+- warning 디자인 실험 코드는 남아 있지만
+- live onroad 표시에서는 warning 계열을 숨김
+
+### 매우 중요한 원칙
+
+- UTM preview 결과는 항상 실제 캡처 이미지로 확인할 것
+- 말로 “됐다”고 하지 말고 캡처로 검증할 것
+- 예전에 stale `APNLastRGData` 때문에 preview 스크립트가 다른 타입을 그리던 문제가 있었음
+
+관련 파일:
+
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h`
+- `tools/utm/show_apn_fake_long_preview.sh`
+
+---
+
+## M. fake-long / APN 관련 실제 기기 배포 시 주의
+
+### 무한부팅처럼 보였던 문제
+
+실제 원인은 “기기 재부팅”이 아니라 manager crash loop였다.
+
+원인:
+
+- `carcontroller.py` 에서 새 모듈을 import 하도록 바뀌었는데
+- 기기에 `opendbc_repo/opendbc/car/gm/cluster_speed.py` 를 안 올려서
+- `ModuleNotFoundError`
+
+증상:
+
+- 사용자는 무한부팅처럼 보임
+
+해결:
+
+- `cluster_speed.py` 기기에 추가 복사
+- 이후 manager 정상 기동
+
+### 교훈
+
+- `carcontroller.py`, `carstate.py` 같이 올릴 때
+  - 새 helper module import 추가 여부를 반드시 같이 확인
+
+---
+
+## N. 2026-03-31 시점 현재 상태 요약
+
+### 잘 된 것
+
+- 자동 밝기 저녁/암흑 구분
+- safety-driving mode 카메라/구간단속 브리지
+- `nSdiType` authoritative mapping 적용
+- 일반 SDI / 보호구역 / 특수 단속 디자인 정리
+- 웹세팅 경량화
+- 디버그탭 추가
+- fake-long safety bit live sync
+- current speed / ACC set speed cluster 보정
+
+### 아직 핵심 미해결
+
+- **synthetic `SET / RES` 가 실제 차량에서 안정적으로 먹지 않음**
+  - `cancel` 은 먹음
+  - `SET/RES` 는 memory/debug/path는 다 정상인데 차가 무시
+
+### 현재 디버그탭 의미
+
+- 웹 탭이 고장인지 확인하는 용도는 이미 끝남
+- 지금은 `synthetic SET/RES 수용성` 실험용 도구
+
+### 현재 추천 테스트 순서
+
+1. `FakeLong = OFF`
+2. `APNFakeLong = OFF`
+3. `FakeLongTestUI = ON`
+4. stock ACC 실제 engaged
+5. 웹 디버그탭에서 `camera-only` `SET/RES/CANCEL`
+6. `FakeLongDebug.last`, ACC set speed, 실제 클러스터 반응 비교
+
+---
+
+## O. 다음 작업자가 바로 이어서 해야 하는 우선순위
+
+### 1순위: synthetic SET/RES
+
+- `opendbc_repo/opendbc/car/gm/carcontroller.py`
+- `opendbc_repo/opendbc/safety/modes/gm.h`
+- 실제 휠 `0x1E1` 와 synthetic `0x1E1` 를 계속 비교
+- 특히:
+  - press 길이
+  - release timing
+  - counter
+  - engaged 조건
+  - camera path 외 추가 조건
+  를 다시 볼 것
+
+### 2순위: APN-fake-long 실제 감속/복귀
+
+- synthetic `SET/RES` 가 풀려야
+  - 주황 감속
+  - 초록 목표 도달
+  - 파란 복귀
+  가 완전히 닫힌다
+
+### 3순위: SDI 타입별 세부 UI 확대
+
+- warning 계열은 일단 live 숨김
+- 필요하면 나중에 별도 policy 정해서 다시 살릴 것
+
+### 4순위: 웹세팅 안정화
+
+- 지금도 “기본은 가볍게, 상세는 눌렀을 때만” 원칙 유지
+- 주행 중 새 무거운 polling 추가하지 말 것
+
+---
+
+## P. 다음 작업자가 절대 놓치면 안 되는 포인트
+
+- `nSdiSection` 만 보고 구간단속으로 판단하지 말 것
+- `Txx` 시그니처의 `T` 값은 authoritative `nSdiType`
+- `APNDataTimestamp` 는 receivedAt 기준이어야 freshness가 맞음
+- `nSdiPlusSpeedLimit = 0` 이라고 `APNNextSpeedLimit` 도 0으로 만들지 말 것
+- `FakeLongTestUI` 가 켜져 있어야 웹 디버그 버튼 테스트가 의미 있음
+- `cancel` 이 먹는다고 `set/res` 도 먹는다고 생각하지 말 것
+- `web debug -> memory param -> carcontroller` 경로는 이미 정상
+- 실차 검증 없이 `됐다`고 단정하지 말 것
+- UTM preview는 반드시 캡처로 검증할 것
+
+---
+
+## Q. 커밋 기준으로 보면 어디서 무엇이 바뀌었는가
+
+이 문서는 워킹트리까지 포함한 인수인계 문서이기 때문에, 아래처럼 **커밋으로 이미 남아 있는 변경**과 **아직 미커밋인 변경**을 분리해서 봐야 한다.
+
+### 현재 브랜치 / 기준 HEAD
+
+- 브랜치: `testing-v1-apn`
+- 문서 작성 시점 HEAD: `4b7feec3`
+- 메시지: `Refresh UTM-built device UI artifacts`
+
+즉, 아래에 적는 `2026-03-24 ~ 2026-03-31` 작업 중 상당수는 **`4b7feec3` 이후 워킹트리에만 존재**한다.
+다음 작업자는 반드시:
+
+1. `git status`
+2. `git diff`
+3. `HISTORY.md` 의 이 섹션
+
+을 함께 보면서 “이건 이미 커밋된 것인지, 아직 로컬 수정인지”를 구분해야 한다.
+
+### 현재 구간에서 특히 의미 있는 커밋 앵커
+
+#### `f8b34fb3` `Add fake-long tools and device dashboard`
+
+이 커밋은 지금 작업의 출발점이다.
+
+- fake-long 관련 최초 기반 추가:
+  - `common/params_keys.h`
+  - `frogpilot/common/frogpilot_variables.py`
+  - `frogpilot/ui/qt/offroad/vehicle_settings.cc`
+  - `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+  - `opendbc_repo/opendbc/car/gm/carcontroller.py`
+  - `opendbc_repo/opendbc/car/interfaces.py`
+  - `opendbc_repo/opendbc/safety/modes/gm.h`
+- 웹 대시보드 최초 추가:
+  - `tools/device_dashboard_mock/server.py`
+  - `tools/device_dashboard_mock/index.html`
+  - `tools/device_dashboard_mock/app.js`
+  - `tools/device_dashboard_mock/styles.css`
+
+중요:
+
+- 예전 “잘 먹던” fake-long test 구조는 사실상 이 커밋 시절의 단순 구조를 기준으로 이해해야 한다
+- 이번에 synthetic `SET/RES` 문제를 다시 파면서 계속 이 커밋과 현재를 비교했다
+
+#### `19684af8` `Add power logic override toggle`
+
+- 전원 종료 로직 override 토글 추가
+- 관련:
+  - `system/hardware/power_monitoring.py`
+  - `frogpilot/common/frogpilot_variables.py`
+  - `frogpilot/ui/qt/offroad/device_settings.cc`
+
+직접 APN/fake-long 작업은 아니지만, 현재 HISTORY 흐름의 직전 커밋 앵커다.
+
+#### `850d6eb4` `Add APN bridge and onroad UI integration`
+
+이 커밋이 현재 APN 기능의 본격 시작점이다.
+
+- `tools/apn_bridge/apn_bridge.py`
+- `tools/apn_bridge/apn_compat.py`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- `selfdrive/ui/qt/onroad/hud.cc`
+- `frogpilot/controls/lib/speed_limit_controller.py`
+
+즉:
+
+- APN memory param 체계
+- APN bridge
+- onroad APN 카메라 표시
+
+는 이 커밋이 기초다.
+
+#### `d066851e` `Improve APN dashboard status panel`
+
+- APN 상태를 웹 대시보드에서 더 보기 좋게 만든 커밋
+- 관련 파일:
+  - `tools/device_dashboard_mock/server.py`
+  - `tools/device_dashboard_mock/index.html`
+  - `tools/device_dashboard_mock/app.js`
+  - `tools/device_dashboard_mock/styles.css`
+
+현재 이후의 웹세팅 개편도 모두 이 구조 위에 얹혀 있다.
+
+#### `3dcacf23` `Add UTM device-ABI build helper`
+
+- `tools/utm/build_device_abi.sh`
+
+의미:
+
+- 이후 `ui`/`params_pyx.so` 를 UTM device-ABI로 빌드해서 기기에 올리는 작업의 핵심 기반
+- `QPushButton::hitButton` ABI mismatch 문제를 겪은 뒤 더 중요해졌다
+
+#### `4b7feec3` `Refresh UTM-built device UI artifacts`
+
+- `selfdrive/ui/ui`
+- `common/params_pyx.so`
+
+만 갱신한 체크인 커밋이다.
+
+중요:
+
+- 현재 브랜치 HEAD가 여기이므로
+- **이 이후 대화에서 계속 진행한 APN / SDI / fake-long / 웹 디버그 / 디자인 작업은 대부분 아직 미커밋이다**
+
+#### `75a74e16` `Tune brightness floor and stop-and-go alerts`
+
+- `selfdrive/ui/ui.cc`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- `selfdrive/ui/qt/onroad/alerts.cc`
+
+의미:
+
+- 자동 밝기와 일부 onroad UI 조정의 이전 앵커
+- 이번에 다시 손본 자동밝기 논의는 이 커밋 이후의 추가 보정으로 이해하면 된다
+
+#### `ce9a7daf` `Fix driving model downloads and retune brightness`
+
+- `frogpilot/frogpilot_process.py`
+- `selfdrive/ui/ui.cc`
+
+의미:
+
+- brightness 조정과 runtime tuning의 이전 앵커
+- 이번 대화에서 brightness를 다시 손본 배경 참고점
+
+#### `41041d9d` `Stabilize runtime and refresh device UI build`
+
+- `frogpilot/frogpilot_process.py`
+- `selfdrive/selfdrived/events.py`
+- `selfdrive/ui/qt/onroad/alerts.cc`
+- `launch_env.sh`
+- `system/manager/manager.py`
+
+의미:
+
+- runtime 안정화/이벤트/런타임 build 관련 과거 앵커
+- 이번에 `commIssue` / `alertDebug` / runtime burden를 다시 다룰 때 참고해야 하는 커밋
+
+#### `49f0793e` `Refresh project handoff history`
+
+- `HISTORY.md` 대규모 갱신
+
+의미:
+
+- 이 문서 체계를 이전에 한 번 크게 정리한 커밋
+- 이번 작업도 같은 방식으로 HISTORY를 확장하고 있다
+
+### 현재 워킹트리(미커밋)에서 바뀐 핵심 파일
+
+다음 파일들은 이 문서 섹션에서 설명한 최근 수정이 들어가 있지만, 아직 깃 커밋 앵커가 없다.
+
+- `tools/apn_bridge/apn_bridge.py`
+  - safety-driving mode 카메라/구간단속 처리
+  - `APNDataTimestamp`
+  - `nSdiType` 카테고리 정리
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.cc`
+- `frogpilot/ui/qt/onroad/frogpilot_annotated_camera.h`
+  - 보호구역 / 일반 SDI / 특수 단속 / 구간단속 디자인
+  - warning live hide
+- `opendbc_repo/opendbc/car/gm/carcontroller.py`
+  - fake-long / APN-fake-long / synthetic button test 경로
+  - camera-only rollback
+  - legacy test payload support
+- `opendbc_repo/opendbc/car/gm/carstate.py`
+  - cluster speed / current speed 보정
+- `opendbc_repo/opendbc/car/gm/cluster_speed.py`
+  - 새 lookup table helper
+- `frogpilot/frogpilot_process.py`
+  - live `FrogPilotCarParams` safetyParam 동기화
+- `tools/device_dashboard_mock/server.py`
+- `tools/device_dashboard_mock/app.js`
+- `tools/device_dashboard_mock/index.html`
+- `tools/device_dashboard_mock/styles.css`
+  - 상태탭 경량화
+  - 디버그탭
+  - stats 재구성
+  - CAN monitoring lazy-load
+- `selfdrive/selfdrived/selfdrived.py`
+- `selfdrive/selfdrived/events.py`
+  - ignore 대상 commIssue 표현 정리
+- `selfdrive/ui/ui.cc`
+- `selfdrive/ui/ui_state.py`
+  - auto brightness 조정
+
+### 다음 작업자가 커밋을 만들 때 추천 방식
+
+- 커밋을 한 번에 너무 크게 만들지 말 것
+- 최소한 아래 단위로 쪼개는 것을 추천:
+
+1. `APN bridge / SDI classification`
+2. `GM cluster speed / fake-long runtime`
+3. `웹 디버그탭 / device dashboard 경량화`
+4. `onroad SDI 디자인`
+
+이렇게 나누면 나중에 regression이 생겨도 어느 덩어리에서 문제가 생겼는지 되짚기 쉽다.
+
+이 섹션은 2026-03-24 이후 현재까지의 APN / SDI / fake-long / 웹 디버그 작업을 이어받기 위한 실제 인수인계 기록이다.
+다음 작업자는 반드시 이 섹션을 먼저 읽고, 특히 `H`, `I`, `N`, `O`, `P` 를 기준으로 다음 액션을 잡는 것을 권장한다.

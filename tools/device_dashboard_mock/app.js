@@ -1,6 +1,8 @@
 const state = {
   meta: null,
   status: null,
+  canDebug: null,
+  debug: null,
   stats: null,
   logs: null,
   params: [],
@@ -20,13 +22,28 @@ const state = {
     presentOnly: false,
     changedOnly: false,
   },
+  monitoring: {
+    canEnabled: false,
+    debugEnabled: false,
+  },
+  ui: {
+    statusDetailsExpanded: false,
+  },
 };
 
+const CAN_MONITOR_STORAGE_KEY = "frogpilot.dashboard.canMonitorEnabled";
+const DEBUG_MONITOR_STORAGE_KEY = "frogpilot.dashboard.debugMonitorEnabled";
+const STATUS_DETAILS_STORAGE_KEY = "frogpilot.dashboard.statusDetailsExpanded";
+
 let liveStatusTimer = null;
+let canRefreshTimer = null;
+let debugRefreshTimer = null;
 let metaRefreshTimer = null;
 let statsRefreshTimer = null;
 let logsRefreshTimer = null;
 let statusRefreshInFlight = false;
+let canRefreshInFlight = false;
+let debugRefreshInFlight = false;
 let metaRefreshInFlight = false;
 let statsRefreshInFlight = false;
 let logsRefreshInFlight = false;
@@ -74,6 +91,23 @@ function formatAgeLabel(ageSec) {
   if (!Number.isFinite(age)) return "-";
   if (age < 1) return "방금";
   return `${age.toFixed(1)}초 전`;
+}
+
+function formatDateTimeLabel(ts) {
+  if (!ts) return "-";
+  const millis = Number(ts) * 1000;
+  if (!Number.isFinite(millis) || millis <= 0) return "-";
+  return new Date(millis).toLocaleString("ko-KR", { hour12: false });
+}
+
+function boolLabel(value) {
+  return value ? "ON" : "OFF";
+}
+
+function selectedText(id) {
+  const element = $(id);
+  if (!element) return "-";
+  return element.options[element.selectedIndex]?.textContent || element.value || "-";
 }
 
 async function api(path, options = {}) {
@@ -176,8 +210,46 @@ function formatValue(value) {
   return String(value);
 }
 
+function loadMonitoringPreferences() {
+  try {
+    state.monitoring.canEnabled = localStorage.getItem(CAN_MONITOR_STORAGE_KEY) === "1";
+    state.monitoring.debugEnabled = localStorage.getItem(DEBUG_MONITOR_STORAGE_KEY) === "1";
+  } catch (error) {
+    state.monitoring.canEnabled = false;
+    state.monitoring.debugEnabled = false;
+  }
+}
+
+function persistMonitoringPreferences() {
+  try {
+    localStorage.setItem(CAN_MONITOR_STORAGE_KEY, state.monitoring.canEnabled ? "1" : "0");
+    localStorage.setItem(DEBUG_MONITOR_STORAGE_KEY, state.monitoring.debugEnabled ? "1" : "0");
+  } catch (error) {
+    // Ignore storage failures and keep runtime state only.
+  }
+}
+
+function loadUiPreferences() {
+  try {
+    state.ui.statusDetailsExpanded = localStorage.getItem(STATUS_DETAILS_STORAGE_KEY) === "1";
+  } catch (error) {
+    state.ui.statusDetailsExpanded = false;
+  }
+}
+
+function persistUiPreferences() {
+  try {
+    localStorage.setItem(STATUS_DETAILS_STORAGE_KEY, state.ui.statusDetailsExpanded ? "1" : "0");
+  } catch (error) {
+    // Ignore storage failures and keep runtime state only.
+  }
+}
+
 function setActiveTab(nextTab) {
   state.activeTab = nextTab;
+  if (window.location.hash !== `#${nextTab}`) {
+    window.history.replaceState(null, "", `#${nextTab}`);
+  }
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === nextTab);
   });
@@ -187,10 +259,25 @@ function setActiveTab(nextTab) {
 
   if (nextTab === "status") {
     refreshLiveStatusView().catch(() => {});
+    if (state.monitoring.canEnabled && state.ui.statusDetailsExpanded) {
+      refreshCanDebugView().catch(() => {});
+    } else {
+      renderCanSignalTools();
+    }
+  } else if (nextTab === "debug") {
+    refreshDebugView().catch(() => {});
   } else if (nextTab === "stats") {
     refreshStatsOnly().then(renderStats).catch(() => {});
   } else if (nextTab === "query") {
     refreshLogsOnly().then(renderLogs).catch(() => {});
+  } else if (nextTab === "settings") {
+    refreshParamsOnly().then(() => {
+      if (!state.selectedKey && state.params.length) {
+        state.selectedKey = state.params[0].key;
+      }
+      renderParamsSummary();
+      renderParams();
+    }).catch(() => {});
   }
 }
 
@@ -204,23 +291,28 @@ function renderConnection() {
   if (state.connection.online) {
     card.classList.remove("offline");
     dot.className = "dot live";
-    label.textContent = state.meta?.modeLabel || "Device Console Connected";
-    detail.textContent = state.meta ? `${state.meta.branch} · prefix ${state.meta.prefix}` : "연결됨";
+    label.textContent = "연결됨";
+    if (detail) detail.textContent = state.meta ? `${state.meta.modeLabel} · ${state.meta.branch}` : "연결됨";
+    card.title = detail ? detail.textContent : "연결됨";
     return;
   }
 
   card.classList.add("offline");
   dot.className = "dot offline";
-  label.textContent = "기기 연결 끊김";
-  detail.textContent = state.connection.lastError || "응답 없음";
+  label.textContent = "끊김";
+  if (detail) detail.textContent = state.connection.lastError || "응답 없음";
+  card.title = detail ? detail.textContent : (state.connection.lastError || "응답 없음");
 }
 
 function renderHero() {
   renderConnection();
   if (!state.meta) return;
 
-  $("connectionLabel").textContent = state.meta.modeLabel;
-  $("deviceLabel").textContent = `${state.meta.branch} · prefix ${state.meta.prefix}`;
+  $("connectionLabel").textContent = state.connection.online ? "연결됨" : "끊김";
+  if ($("deviceLabel")) {
+    $("deviceLabel").textContent = `${state.meta.modeLabel} · ${state.meta.branch} · prefix ${state.meta.prefix}`;
+    $("connectionCard").title = $("deviceLabel").textContent;
+  }
   $("deviceStateTitle").textContent = state.meta.liveMessaging ? "실시간 메시지 + Params 연결됨" : "실제 Params 연결됨";
   $("deviceStateDescription").textContent = state.meta.liveMessaging
     ? `${state.meta.paramsRoot} 와 openpilot 실시간 메시지를 함께 읽는 기기 웹 콘솔입니다.`
@@ -278,6 +370,20 @@ function renderStatusHero() {
   }
 }
 
+function renderStatusDetailsToggle() {
+  const wrap = $("statusDetailsWrap");
+  const button = $("toggleStatusDetailsButton");
+  const caption = $("statusDetailsCaption");
+  if (!wrap || !button || !caption) return;
+
+  wrap.classList.toggle("is-collapsed", !state.ui.statusDetailsExpanded);
+  button.textContent = state.ui.statusDetailsExpanded ? "접기" : "더보기";
+  button.classList.toggle("is-active", state.ui.statusDetailsExpanded);
+  caption.textContent = state.ui.statusDetailsExpanded
+    ? "하단 상세 상태를 실시간 표시 중"
+    : "상단 핵심 정보만 표시 중";
+}
+
 function renderStatusCard(gridId, entries) {
   const grid = $(gridId);
   const labels = entries.map(([label]) => label);
@@ -317,7 +423,8 @@ function renderStatusCard(gridId, entries) {
 }
 
 function renderStatusPanels() {
-  if (!state.status) return;
+  renderStatusDetailsToggle();
+  if (!state.status || !state.ui.statusDetailsExpanded) return;
 
   renderStatusCard("deviceInfoGrid", [
     ["Started", state.status.device.started],
@@ -401,6 +508,7 @@ function renderStatusPanels() {
     ["연결 상태", state.status.apn.statusLabel],
     ["브리지 실행", state.status.apn.bridgeEnabled],
     ["Route Active", state.status.apn.routeActive],
+    ["임시 라벨", state.status.apn.currentLabel],
     ["브리지 메세지", state.status.apn.message || "-"],
     ["기기 IP", state.status.apn.deviceIp],
     ["수신 포트", state.status.apn.listenPort],
@@ -412,13 +520,590 @@ function renderStatusPanels() {
     ["최근 수신", formatAgeLabel(state.status.apn.lastPacketAgeSec)],
     ["도로명", state.status.apn.roadName],
     ["제한속도", state.status.apn.roadLimitKph === "-" ? "-" : `${state.status.apn.roadLimitKph} km/h`],
+    ["도착까지 남은 총 거리", state.status.apn.remainingDistanceLabel],
+    ["도착까지 남은 총 시간", state.status.apn.remainingTimeLabel],
+    ["다음 안내까지 거리", state.status.apn.nextTurnDistanceLabel],
+    ["다음 안내 종류", state.status.apn.nextTurnLabel],
     ["SDI 타입", state.status.apn.sdiType],
     ["SDI 구간", state.status.apn.sdiSection],
+    ["SDI Plus 타입", state.status.apn.sdiPlusType],
+    ["SDI Block 타입", state.status.apn.sdiBlockType],
+    ["Block Section", state.status.apn.sdiBlockSection],
     ["SDI 거리", state.status.apn.sdiDistanceM === "-" ? "-" : `${state.status.apn.sdiDistanceM} m`],
   ]);
 
   setText("apnDebugSubtitle", state.status.apn.lastPacketAt ? `마지막 수신 ${formatTimeLabel(state.status.apn.lastPacketAt)}` : "브리지 대기 중");
   setExactText("apnDebugViewer", state.status.apn.debugJson || "{}");
+  renderApnLabelTools();
+  renderCanSignalTools();
+}
+
+function renderApnLabelTools() {
+  const apn = state.status?.apn;
+  if (!apn) return;
+
+  const input = $("apnLabelInput");
+  const saveButton = $("saveApnLabelButton");
+  const deleteButton = $("deleteApnLabelButton");
+  const list = $("apnLabelList");
+  const currentSignature = apn.currentSignature || "";
+  const currentLabel = apn.currentLabel && apn.currentLabel !== "-" ? apn.currentLabel : "";
+
+  setExactText("apnLabelSubtitle", currentSignature ? apn.currentSignatureSummary || currentSignature : "현재 SDI 시그니처 없음");
+  setExactText("apnSignatureValue", currentSignature || "-");
+  setExactText("apnCurrentLabelValue", currentLabel || "-");
+
+  if (input && document.activeElement !== input) {
+    input.value = currentLabel;
+  }
+  if (input) {
+    input.disabled = !currentSignature;
+  }
+  if (saveButton) {
+    saveButton.disabled = !currentSignature;
+  }
+  if (deleteButton) {
+    deleteButton.disabled = !currentSignature || !currentLabel;
+  }
+  if (!list) return;
+
+  list.innerHTML = "";
+  const labels = Array.isArray(apn.savedLabels) ? apn.savedLabels : [];
+  if (!labels.length) {
+    const empty = document.createElement("div");
+    empty.className = "apn-label-empty";
+    empty.textContent = "저장된 SDI 임시 라벨이 없습니다.";
+    list.appendChild(empty);
+    return;
+  }
+
+  labels.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "apn-label-item";
+
+    const head = document.createElement("div");
+    head.className = "apn-label-item-head";
+
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "apn-label-title-wrap";
+
+    const title = document.createElement("strong");
+    title.textContent = entry.label || "-";
+    titleWrap.appendChild(title);
+
+    if (entry.signature === currentSignature) {
+      const badge = document.createElement("span");
+      badge.className = "param-badge param-badge-live";
+      badge.textContent = "현재";
+      titleWrap.appendChild(badge);
+    }
+
+    const updated = document.createElement("span");
+    updated.className = "panel-caption";
+    updated.textContent = formatDateTimeLabel(entry.updatedAt);
+
+    head.appendChild(titleWrap);
+    head.appendChild(updated);
+
+    const signature = document.createElement("code");
+    signature.className = "apn-label-signature";
+    signature.textContent = entry.signature || "-";
+
+    const summary = document.createElement("div");
+    summary.className = "apn-label-summary";
+    summary.textContent = entry.summary || "-";
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "mini-button mini-button-muted";
+    removeButton.textContent = "삭제";
+    removeButton.addEventListener("click", async () => {
+      await deleteApnLabel(entry.signature);
+    });
+
+    item.appendChild(head);
+    item.appendChild(signature);
+    item.appendChild(summary);
+    item.appendChild(removeButton);
+    list.appendChild(item);
+  });
+}
+
+async function saveCurrentApnLabel() {
+  const apn = state.status?.apn;
+  const input = $("apnLabelInput");
+  const saveButton = $("saveApnLabelButton");
+  if (!apn?.currentSignature || !input || !saveButton) return;
+
+  const label = input.value.trim();
+  if (!label) {
+    addLog("라벨 저장 실패", "임시 라벨 문구를 입력해 주세요.");
+    renderRecentChanges();
+    return;
+  }
+
+  saveButton.disabled = true;
+  try {
+    await api("/api/apn-labels", {
+      method: "POST",
+      body: JSON.stringify({
+        signature: apn.currentSignature,
+        label,
+        fields: apn.currentSignatureFields || {},
+      }),
+    });
+    await refreshStatusOnly();
+    addLog("SDI 라벨 저장", `${apn.currentSignature} → ${label}`);
+    renderStatusHero();
+    renderStatusPanels();
+    renderRecentChanges();
+  } catch (error) {
+    addLog("라벨 저장 실패", error.message);
+    renderRecentChanges();
+  } finally {
+    saveButton.disabled = false;
+  }
+}
+
+async function deleteApnLabel(signature = state.status?.apn?.currentSignature) {
+  const targetSignature = String(signature || "").trim();
+  if (!targetSignature) return;
+
+  try {
+    await api(`/api/apn-labels/${encodeURIComponent(targetSignature)}`, { method: "DELETE" });
+    await refreshStatusOnly();
+    addLog("SDI 라벨 삭제", targetSignature);
+    renderStatusHero();
+    renderStatusPanels();
+    renderRecentChanges();
+  } catch (error) {
+    addLog("라벨 삭제 실패", error.message);
+    renderRecentChanges();
+  }
+}
+
+function renderCanSignalTools() {
+  renderCanMonitorControls();
+
+  if (!state.monitoring.canEnabled) {
+    const list = $("canSignalList");
+    if (!list) return;
+    setExactText("canDebugSubtitle", "모니터링 꺼짐 · 필요할 때만 시작");
+    list.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "apn-label-empty";
+    empty.textContent = "부하를 줄이기 위해 CAN/차량 상태 모니터링은 기본적으로 꺼져 있습니다. 필요할 때만 '모니터링 시작'을 눌러 주세요.";
+    list.appendChild(empty);
+    return;
+  }
+
+  const canDebug = state.canDebug || state.status?.canDebug;
+  const list = $("canSignalList");
+  if (!list) return;
+
+  setExactText("canDebugSubtitle", canDebug?.available
+    ? `차량 상태 + CAN 후보 · 마지막 갱신 ${formatTimeLabel(canDebug.updatedAt)}`
+    : (canDebug?.error || "CAN 후보 신호 대기 중"));
+
+  list.innerHTML = "";
+  if (!canDebug?.available) {
+    const empty = document.createElement("div");
+    empty.className = "apn-label-empty";
+    empty.textContent = canDebug?.error || "CAN 후보 신호를 아직 읽지 못했습니다.";
+    list.appendChild(empty);
+    return;
+  }
+
+  const entries = Array.isArray(canDebug.entries) ? canDebug.entries : [];
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "apn-label-empty";
+    empty.textContent = "현재 후보 CAN 신호가 없습니다.";
+    list.appendChild(empty);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const card = document.createElement("div");
+    card.className = `can-signal-card ${entry.live ? "is-live" : "is-stale"}`;
+
+    const header = document.createElement("div");
+    header.className = "can-signal-head";
+    const kindText = entry.kind === "raw" ? "RAW CAN" : entry.kind === "status" ? `${entry.message} · ${entry.signal}` : `${entry.message} · ${entry.signal}`;
+    header.innerHTML = `<div><strong>${entry.title}</strong><span>${kindText}</span></div>`;
+
+    const chips = document.createElement("div");
+    chips.className = "param-badges";
+    if (entry.kind === "status") {
+      chips.appendChild(createBadge("vehicle", "param-badge-live"));
+    } else {
+      chips.appendChild(createBadge(`src ${entry.src}`));
+      chips.appendChild(createBadge(`addr ${entry.address}`));
+    }
+    if (entry.kind === "raw") {
+      chips.appendChild(createBadge("raw", "param-badge-warn"));
+    } else if (entry.kind === "status") {
+      chips.appendChild(createBadge("status"));
+    } else {
+      chips.appendChild(createBadge("decoded", "param-badge-live"));
+    }
+    chips.appendChild(createBadge(entry.live ? "LIVE" : "RECENT", entry.live ? "param-badge-live" : "param-badge-recent"));
+    header.appendChild(chips);
+
+    const valueRow = document.createElement("div");
+    valueRow.className = "can-signal-value";
+    valueRow.innerHTML = `<span>현재 값</span><code>${formatValue(entry.value)}</code>`;
+
+    const lastSeenRow = document.createElement("div");
+    lastSeenRow.className = "can-signal-last-seen";
+    lastSeenRow.innerHTML = `<span>마지막 관측</span><strong>${entry.live ? "지금" : formatAgeLabel(entry.lastSeenAgeSec)}</strong>`;
+
+    const labelRow = document.createElement("div");
+    labelRow.className = "can-signal-current-label";
+    labelRow.innerHTML = `<span>라벨</span><strong>${entry.label && entry.label !== "-" ? entry.label : "-"}</strong>`;
+
+    const inputRow = document.createElement("div");
+    inputRow.className = "can-signal-form";
+    const input = document.createElement("input");
+    input.className = "param-input";
+    input.type = "text";
+    input.placeholder = "예: 버튼 누를 때만 변함, set speed 후보";
+    input.value = entry.label && entry.label !== "-" ? entry.label : "";
+
+    const saveButton = document.createElement("button");
+    saveButton.className = "mini-button";
+    saveButton.textContent = "저장";
+    saveButton.addEventListener("click", async () => {
+      await saveCanLabel(entry.id, input.value, entry);
+    });
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "mini-button mini-button-muted";
+    deleteButton.textContent = "삭제";
+    deleteButton.disabled = !(entry.label && entry.label !== "-");
+    deleteButton.addEventListener("click", async () => {
+      await deleteCanLabel(entry.id);
+    });
+
+    input.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        await saveCanLabel(entry.id, input.value, entry);
+      }
+    });
+
+    inputRow.appendChild(input);
+    inputRow.appendChild(saveButton);
+    inputRow.appendChild(deleteButton);
+
+    card.appendChild(header);
+    card.appendChild(valueRow);
+    card.appendChild(lastSeenRow);
+    card.appendChild(labelRow);
+    card.appendChild(inputRow);
+    list.appendChild(card);
+  });
+}
+
+function renderCanMonitorControls() {
+  const button = $("toggleCanMonitorButton");
+  if (!button) return;
+
+  button.textContent = state.monitoring.canEnabled ? "모니터링 중지" : "모니터링 시작";
+  button.classList.toggle("is-active", state.monitoring.canEnabled);
+}
+
+function debugBusLabel(value) {
+  return {
+    camera: "카메라",
+  }[String(value || "").trim().toLowerCase()] || formatValue(value);
+}
+
+function debugModeLabel(value) {
+  return {
+    tap: "눌렀다 떼기",
+    press: "누르기만",
+    release: "떼기만",
+  }[String(value || "").trim().toLowerCase()] || formatValue(value);
+}
+
+function describeDebugCommand(command) {
+  if (!command || typeof command !== "object") return "전송 대기 중";
+  const button = String(command.button || "-").toUpperCase();
+  const repeats = Number(command.repeats || 0);
+  const holdFrames = Number(command.holdFrames || 0);
+  const parts = [
+    button,
+    debugBusLabel(command.bus),
+    debugModeLabel(command.mode),
+  ];
+  if (repeats > 0) {
+    parts.push(`${repeats}회`);
+  }
+  if (holdFrames > 0) {
+    parts.push(`${holdFrames}프레임 유지`);
+  }
+  return parts.join(" · ");
+}
+
+function renderDebugCommandConfig() {
+  setExactText(
+    "debugCommandSubtitle",
+    `${selectedText("debugBusMode")} · ${selectedText("debugActionMode")} · ${selectedText("debugRepeatCount")} · ${selectedText("debugHoldFrames")}`,
+  );
+}
+
+function renderDebugMonitorControls() {
+  const toggleButton = $("toggleDebugMonitorButton");
+  if (toggleButton) {
+    toggleButton.textContent = state.monitoring.debugEnabled ? "실시간 보기 끄기" : "실시간 보기 켜기";
+    toggleButton.classList.toggle("is-active", state.monitoring.debugEnabled);
+  }
+
+  setExactText("debugPollingStatus", state.monitoring.debugEnabled ? "실시간 보기 켜짐" : "수동 갱신 모드");
+}
+
+function renderDebug() {
+  const debug = state.debug;
+  renderDebugMonitorControls();
+  if (!debug) {
+    setExactText("debugTitle", "버튼 실험 콘솔");
+    setExactText("debugSubtitle", "웹에서 fake-long 버튼 조합을 직접 전송합니다.");
+    setExactText("debugSafetyHint", "디버그 상태를 불러오는 중...");
+    setClass("debugSafetyHint", "debug-safety-hint is-neutral");
+    setExactText("debugSendStatus", "디버그 대기 중");
+    renderDebugCommandConfig();
+    renderStatusCard("debugInfoGrid", []);
+    setExactText("debugPendingViewer", "{}");
+    setExactText("debugFakeLongViewer", "{}");
+    return;
+  }
+
+  const runtime = debug.runtime || {};
+  const safetyHint = debug.safetyHint || {};
+  const fakeLongDebug = debug.fakeLongDebug || {};
+  const pendingTest = debug.pendingTest || {};
+  const updatedLabel = debug.updatedAt ? `마지막 갱신 ${formatTimeLabel(debug.updatedAt)}` : "";
+  const activeDebugBits = [
+    runtime.fakeLong ? "Fake-Long ON" : "Fake-Long OFF",
+    runtime.fakeLongTestUI ? "Test UI ON" : "Test UI OFF",
+    runtime.apnFakeLong ? "APN ON" : "APN OFF",
+  ];
+
+  setExactText("debugTitle", "버튼 실험 콘솔");
+  setExactText("debugSubtitle", [activeDebugBits.join(" · "), updatedLabel].filter(Boolean).join(" · "));
+  setExactText("debugSafetyHint", safetyHint.message || "웹 명령이 carcontroller까지 들어가는지 확인 중입니다.");
+  setClass("debugSafetyHint", `debug-safety-hint is-${safetyHint.level || "neutral"}`);
+
+  const onroadChip = $("debugOnroadChip");
+  setExactText(onroadChip, runtime.onroad ? "ONROAD" : "OFFROAD");
+  setClass(onroadChip, `pill ${runtime.onroad ? "success" : "neutral"}`);
+
+  const cruiseChip = $("debugCruiseChip");
+  const cruiseLabel = runtime.accEnabled ? "ACC ENGAGED" : runtime.accAvailable ? "ACC READY" : "CRUISE OFF";
+  setExactText(cruiseChip, cruiseLabel);
+  setClass(cruiseChip, `pill ${runtime.accEnabled ? "success" : runtime.accAvailable ? "warn" : "neutral"}`);
+
+  const safetyChip = $("debugSafetyChip");
+  setExactText(safetyChip, `SAFETY ${formatValue(runtime.safetyParam)}`);
+  setClass(safetyChip, `pill ${runtime.controlsAllowed ? "success" : "neutral"}`);
+
+  setText("debugVehicleSpeedValue", runtime.vehicleSpeed);
+  setText("debugAccSpeedValue", runtime.accSpeed);
+  setText("debugLastButtonValue", fakeLongDebug.last || "-");
+  setText("debugFakeLongFlagValue", boolLabel(runtime.fakeLong));
+  setText("debugFakeLongTestUIValue", boolLabel(runtime.fakeLongTestUI));
+  setText("debugApnFakeLongValue", boolLabel(runtime.apnFakeLong));
+
+  setExactText(
+    "debugSendStatus",
+    pendingTest && Object.keys(pendingTest).length
+      ? `최근 전송 · ${describeDebugCommand(pendingTest)}`
+      : "전송 대기 중",
+  );
+
+  renderStatusCard("debugInfoGrid", [
+    ["Onroad", runtime.onroad],
+    ["Enabled", runtime.enabled],
+    ["Engaged", runtime.engaged],
+    ["Ignition", runtime.ignition],
+    ["Controls Allowed", runtime.controlsAllowed],
+    ["Safety Param", runtime.safetyParam],
+    ["ACC Available", runtime.accAvailable],
+    ["ACC Enabled", runtime.accEnabled],
+    ["Armed", fakeLongDebug.armed],
+    ["Paused", fakeLongDebug.paused],
+    ["Current Set", fakeLongDebug.set],
+    ["Target", fakeLongDebug.target],
+    ["Commanded", fakeLongDebug.commanded],
+    ["User Set", fakeLongDebug.userSet],
+    ["Raw Set", fakeLongDebug.rawSet],
+    ["Raw Target", fakeLongDebug.rawTarget],
+    ["Test Bus", fakeLongDebug.testBus || pendingTest.bus || "-"],
+    ["Test Mode", fakeLongDebug.testMode || pendingTest.mode || "-"],
+    ["APN Active", fakeLongDebug.apnControlActive],
+    ["APN Recovery", fakeLongDebug.apnRecoveryActive],
+  ]);
+
+  setExactText(
+    "debugPendingSubtitle",
+    pendingTest.sentAtMs ? `마지막 요청 ${formatTimeLabel(pendingTest.sentAtMs / 1000)}` : "마지막 요청 payload",
+  );
+  setExactText("debugPendingViewer", debug.pendingTestRaw || "{}");
+  setExactText(
+    "debugViewerSubtitle",
+    fakeLongDebug.last ? `최근 버튼 ${String(fakeLongDebug.last).toUpperCase()}` : "memory param",
+  );
+  setExactText("debugFakeLongViewer", debug.fakeLongDebugRaw || "{}");
+  renderDebugCommandConfig();
+}
+
+async function setCanMonitoringEnabled(enabled) {
+  const next = Boolean(enabled);
+  state.monitoring.canEnabled = next;
+  persistMonitoringPreferences();
+
+  if (!next) {
+    state.canDebug = null;
+    renderCanSignalTools();
+    addLog("CAN 모니터링 중지", "상태 탭의 실시간 CAN/차량 상태 polling을 멈췄습니다.");
+    renderRecentChanges();
+    return;
+  }
+
+  renderCanSignalTools();
+  try {
+    await refreshCanDebugView();
+    addLog("CAN 모니터링 시작", "실시간 CAN/차량 상태 후보 신호를 다시 읽기 시작했습니다.");
+  } catch (error) {
+    addLog("CAN 모니터링 시작 실패", error.message);
+  }
+  renderRecentChanges();
+}
+
+async function saveCanLabel(id, labelValue, entry) {
+  const label = String(labelValue || "").trim();
+  if (!id || !label) {
+    addLog("CAN 라벨 저장 실패", "신호와 라벨 문구를 확인해 주세요.");
+    renderRecentChanges();
+    return;
+  }
+
+  try {
+    await api("/api/can-labels", {
+      method: "POST",
+      body: JSON.stringify({
+        id,
+        label,
+        meta: {
+          title: entry.title,
+          src: entry.src,
+          address: entry.address,
+          message: entry.message,
+          signal: entry.signal,
+        },
+      }),
+    });
+    await refreshCanDebugOnly();
+    addLog("CAN 라벨 저장", `${entry.title} → ${label}`);
+    renderCanSignalTools();
+    renderRecentChanges();
+  } catch (error) {
+    addLog("CAN 라벨 저장 실패", error.message);
+    renderRecentChanges();
+  }
+}
+
+async function deleteCanLabel(id) {
+  if (!id) return;
+  try {
+    await api(`/api/can-labels/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await refreshCanDebugOnly();
+    addLog("CAN 라벨 삭제", id);
+    renderCanSignalTools();
+    renderRecentChanges();
+  } catch (error) {
+    addLog("CAN 라벨 삭제 실패", error.message);
+    renderRecentChanges();
+  }
+}
+
+async function refreshDebugOnly() {
+  state.debug = await api("/api/debug");
+}
+
+async function refreshDebugView() {
+  if (debugRefreshInFlight) return;
+  debugRefreshInFlight = true;
+  try {
+    await refreshDebugOnly();
+    renderDebug();
+  } catch (error) {
+    addLog("디버그 갱신 실패", error.message);
+    renderRecentChanges();
+  } finally {
+    debugRefreshInFlight = false;
+  }
+}
+
+async function setDebugMonitoringEnabled(enabled) {
+  const next = Boolean(enabled);
+  state.monitoring.debugEnabled = next;
+  persistMonitoringPreferences();
+  renderDebugMonitorControls();
+
+  if (!next) {
+    addLog("디버그 실시간 보기 중지", "디버그 탭 자동 polling을 멈췄습니다.");
+    renderRecentChanges();
+    return;
+  }
+
+  try {
+    await refreshDebugView();
+    addLog("디버그 실시간 보기 시작", "디버그 탭 자동 polling을 다시 시작했습니다.");
+  } catch (error) {
+    addLog("디버그 실시간 보기 실패", error.message);
+  }
+  renderRecentChanges();
+}
+
+function currentDebugCommandPayload(button) {
+  return {
+    button,
+    bus: "camera",
+    mode: $("debugActionMode")?.value || "tap",
+    repeats: Number($("debugRepeatCount")?.value || 1),
+    holdFrames: Number($("debugHoldFrames")?.value || 0),
+    note: `web-debug:${button}`,
+  };
+}
+
+async function sendDebugButton(button) {
+  const payload = currentDebugCommandPayload(button);
+  const status = $("debugSendStatus");
+  setExactText(status, `전송 중 · ${describeDebugCommand(payload)}`);
+  try {
+    const response = await api("/api/debug/fake-long-test", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    state.debug = response.debug || state.debug;
+    renderDebug();
+    addLog("디버그 버튼 전송", describeDebugCommand(payload));
+    renderRecentChanges();
+  } catch (error) {
+    setExactText(status, `전송 실패 · ${error.message}`);
+    addLog("디버그 버튼 실패", `${String(button).toUpperCase()} · ${error.message}`);
+    renderRecentChanges();
+  }
+}
+
+function applyDebugPreset(button) {
+  const { presetMode, presetRepeats, presetHold } = button.dataset;
+  if ($("debugBusMode")) $("debugBusMode").value = "camera";
+  if ($("debugActionMode") && presetMode) $("debugActionMode").value = presetMode;
+  if ($("debugRepeatCount") && presetRepeats) $("debugRepeatCount").value = presetRepeats;
+  if ($("debugHoldFrames") && presetHold) $("debugHoldFrames").value = presetHold;
+  renderDebugCommandConfig();
 }
 
 function renderStats() {
@@ -446,15 +1131,44 @@ function renderStats() {
   $("statsSummaryDistance").textContent = state.stats.summary?.distance || "-";
   $("statsSummaryTime").textContent = state.stats.summary?.time || "-";
   $("statsSummaryCaption").textContent = available
-    ? "FrogPilotStats를 카테고리별로 정리한 누적 통계"
+    ? "핵심 지표와 카테고리별 통계를 한눈에 볼 수 있도록 재구성한 대시보드"
     : "기기에서 통계 수집 전";
+
+  const pulse = state.stats.pulse || {};
+  $("statsPulsePrimaryLabel").textContent = pulse.primaryLabel || "총 활성화";
+  $("statsPulsePrimaryValue").textContent = pulse.primaryValue || "-";
+  $("statsPulseSecondaryLabel").textContent = pulse.secondaryLabel || "긴급 제동 경고";
+  $("statsPulseSecondaryValue").textContent = pulse.secondaryValue || "-";
+  $("statsPulseNoteLabel").textContent = pulse.noteLabel || "Overview";
+  $("statsHeroFocus").textContent = pulse.noteText || (available
+    ? `${(state.stats.sections || []).length}개 섹션 통계를 확인할 수 있습니다.`
+    : "아직 누적 통계가 없습니다.");
 
   const summaryGrid = $("statsSummaryGrid");
   summaryGrid.innerHTML = "";
-  (state.stats.summary?.cards || []).forEach((item) => {
+  const summaryCards = state.stats.summary?.cards || [];
+  const groupedSummaryCards = [];
+  for (let i = 0; i < summaryCards.length; i += 2) {
+    groupedSummaryCards.push(summaryCards.slice(i, i + 2));
+  }
+
+  groupedSummaryCards.forEach((group) => {
+    const tones = group.map((item) => item.tone).filter(Boolean);
+    const primaryTone = tones[0];
     const card = document.createElement("div");
-    card.className = `stats-summary-card ${item.tone ? `stats-item-${item.tone}` : ""}`.trim();
-    card.innerHTML = `<span>${item.label}</span><strong>${formatValue(item.value)}</strong>`;
+    card.className = `stats-summary-card stats-summary-card-double ${primaryTone ? `stats-item-${primaryTone}` : ""}`.trim();
+    card.innerHTML = group.map((item, index) => {
+      const toneLabel = item.tone === "warning" ? "Alert" : item.tone === "accent" ? "Highlight" : item.tone === "success" ? "Live" : "Info";
+      return `
+        <div class="stats-summary-stat ${index > 0 ? "is-secondary" : ""}">
+          <div class="stats-summary-card-head">
+            <span>${item.label}</span>
+            <em class="stats-tone-pill">${toneLabel}</em>
+          </div>
+          <strong>${formatValue(item.value)}</strong>
+        </div>
+      `;
+    }).join("");
     summaryGrid.appendChild(card);
   });
 
@@ -463,16 +1177,29 @@ function renderStats() {
 
   (state.stats.sections || []).forEach((section) => {
     const card = document.createElement("section");
-    card.className = "stats-section-card";
+    card.className = `stats-section-card stats-section-${section.id}`;
 
     const header = document.createElement("div");
     header.className = "stats-section-header";
-    header.innerHTML = `<div><p class="panel-kicker">STATS</p><h3>${section.title}</h3></div><span class="panel-caption">${(section.items || []).length}개 항목</span>`;
+    header.innerHTML = `<div><p class="panel-kicker">${section.id.toUpperCase()}</p><h3>${section.title}</h3></div><span class="panel-caption">${(section.items || []).length}개 항목</span>`;
+
+    const items = Array.isArray(section.items) ? section.items : [];
+    const [spotlightItem, ...restItems] = items;
+
+    let spotlight = null;
+    if (spotlightItem) {
+      spotlight = document.createElement("div");
+      spotlight.className = `stats-spotlight ${spotlightItem.tone ? `stats-item-${spotlightItem.tone}` : ""}`.trim();
+      spotlight.innerHTML = `
+        <span>${spotlightItem.label}</span>
+        <strong>${formatValue(spotlightItem.value)}</strong>
+      `;
+    }
 
     const grid = document.createElement("div");
-    grid.className = "stats-item-grid";
+    grid.className = `stats-item-grid ${restItems.length <= 2 ? "is-compact" : ""}`.trim();
 
-    (section.items || []).forEach((item) => {
+    restItems.forEach((item) => {
       const row = document.createElement("div");
       row.className = `stats-item ${item.tone ? `stats-item-${item.tone}` : ""}`.trim();
       row.innerHTML = `<span>${item.label}</span><strong>${formatValue(item.value)}</strong>`;
@@ -480,6 +1207,9 @@ function renderStats() {
     });
 
     card.appendChild(header);
+    if (spotlight) {
+      card.appendChild(spotlight);
+    }
     card.appendChild(grid);
     sectionGrid.appendChild(card);
   });
@@ -694,7 +1424,16 @@ function renderRecentChanges() {
 }
 
 async function refreshStatusOnly() {
-  state.status = await api("/api/status");
+  const detail = state.ui.statusDetailsExpanded ? "full" : "lite";
+  state.status = await api(`/api/status?detail=${detail}`);
+}
+
+async function refreshCanDebugOnly() {
+  if (!state.monitoring.canEnabled) {
+    state.canDebug = null;
+    return;
+  }
+  state.canDebug = await api("/api/can-debug");
 }
 
 async function refreshMetaOnly() {
@@ -729,6 +1468,20 @@ async function refreshLiveStatusView() {
   }
 }
 
+async function refreshCanDebugView() {
+  if (canRefreshInFlight) return;
+  canRefreshInFlight = true;
+  try {
+    await refreshCanDebugOnly();
+    renderCanSignalTools();
+  } catch (error) {
+    addLog("CAN 디버그 갱신 실패", error.message);
+    renderRecentChanges();
+  } finally {
+    canRefreshInFlight = false;
+  }
+}
+
 async function refreshMetaView() {
   if (metaRefreshInFlight) return;
   metaRefreshInFlight = true;
@@ -745,21 +1498,11 @@ async function refreshMetaView() {
 }
 
 async function loadAll() {
-  const [meta, status, stats, logs, paramsPayload] = await Promise.all([
+  const [meta] = await Promise.all([
     api("/api/meta"),
-    api("/api/status"),
-    api("/api/stats"),
-    api(`/api/logs?source=${encodeURIComponent(state.activeLogSource)}`),
-    api("/api/params"),
+    refreshStatusOnly(),
   ]);
   state.meta = meta;
-  state.status = status;
-  state.stats = stats;
-  state.logs = logs;
-  state.params = paramsPayload.params;
-  if (!state.selectedKey && state.params.length) {
-    state.selectedKey = state.params[0].key;
-  }
   renderAll();
 }
 
@@ -767,6 +1510,7 @@ function renderAll() {
   renderHero();
   renderStatusHero();
   renderStatusPanels();
+  renderDebug();
   renderStats();
   renderLogs();
   renderParamsSummary();
@@ -799,9 +1543,91 @@ function bindFilters() {
 
 function bindActions() {
   $("refreshButton").addEventListener("click", async () => {
-    await loadAll();
+    await Promise.all([refreshMetaOnly(), refreshStatusOnly()]);
+    if (state.activeTab === "status" && state.monitoring.canEnabled && state.ui.statusDetailsExpanded) {
+      await refreshCanDebugView();
+    } else if (state.activeTab === "debug") {
+      await refreshDebugOnly();
+    } else if (state.activeTab === "stats") {
+      await refreshStatsOnly();
+    } else if (state.activeTab === "query") {
+      await refreshLogsOnly();
+    } else if (state.activeTab === "settings") {
+      await refreshParamsOnly();
+      if (!state.selectedKey && state.params.length) {
+        state.selectedKey = state.params[0].key;
+      }
+    }
     addLog("새로고침", "상태와 params를 다시 읽었습니다.");
     renderAll();
+  });
+
+  $("toggleStatusDetailsButton").addEventListener("click", async () => {
+    state.ui.statusDetailsExpanded = !state.ui.statusDetailsExpanded;
+    persistUiPreferences();
+    renderStatusPanels();
+    if (state.activeTab !== "status") return;
+    await refreshLiveStatusView();
+    if (state.monitoring.canEnabled && state.ui.statusDetailsExpanded) {
+      await refreshCanDebugView();
+    } else {
+      renderCanSignalTools();
+    }
+  });
+
+  $("saveApnLabelButton").addEventListener("click", async () => {
+    await saveCurrentApnLabel();
+  });
+
+  $("deleteApnLabelButton").addEventListener("click", async () => {
+    await deleteApnLabel();
+  });
+
+  $("toggleCanMonitorButton").addEventListener("click", async () => {
+    await setCanMonitoringEnabled(!state.monitoring.canEnabled);
+  });
+
+  $("refreshDebugButton").addEventListener("click", async () => {
+    await refreshDebugView();
+  });
+
+  $("toggleDebugMonitorButton").addEventListener("click", async () => {
+    await setDebugMonitoringEnabled(!state.monitoring.debugEnabled);
+  });
+
+  ["debugBusMode", "debugActionMode", "debugRepeatCount", "debugHoldFrames"].forEach((id) => {
+    $(id).addEventListener("change", () => {
+      renderDebugCommandConfig();
+    });
+  });
+
+  document.querySelectorAll(".debug-preset-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      applyDebugPreset(button);
+    });
+  });
+
+  $("debugButtonMain").addEventListener("click", async () => {
+    await sendDebugButton("main");
+  });
+  $("debugButtonCancel").addEventListener("click", async () => {
+    await sendDebugButton("cancel");
+  });
+  $("debugButtonRes").addEventListener("click", async () => {
+    await sendDebugButton("res");
+  });
+  $("debugButtonSet").addEventListener("click", async () => {
+    await sendDebugButton("set");
+  });
+  $("debugButtonUnpress").addEventListener("click", async () => {
+    await sendDebugButton("unpress");
+  });
+
+  $("apnLabelInput").addEventListener("keydown", async (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      await saveCurrentApnLabel();
+    }
   });
 
   $("refreshLogsButton").addEventListener("click", async () => {
@@ -864,13 +1690,29 @@ function startAutoRefresh() {
       if (state.activeTab === "status") {
         refreshLiveStatusView();
       }
-    }, 1500);
+    }, 5000);
+  }
+
+  if (!canRefreshTimer) {
+    canRefreshTimer = window.setInterval(() => {
+      if (state.activeTab === "status" && state.monitoring.canEnabled && state.ui.statusDetailsExpanded) {
+        refreshCanDebugView();
+      }
+    }, 5000);
+  }
+
+  if (!debugRefreshTimer) {
+    debugRefreshTimer = window.setInterval(() => {
+      if (state.activeTab === "debug" && state.monitoring.debugEnabled) {
+        refreshDebugView();
+      }
+    }, 5000);
   }
 
   if (!metaRefreshTimer) {
     metaRefreshTimer = window.setInterval(() => {
       refreshMetaView();
-    }, 15000);
+    }, 30000);
   }
 
   if (!statsRefreshTimer) {
@@ -884,7 +1726,7 @@ function startAutoRefresh() {
           statsRefreshInFlight = false;
         });
       }
-    }, 15000);
+    }, 30000);
   }
 
   if (!logsRefreshTimer) {
@@ -898,13 +1740,19 @@ function startAutoRefresh() {
           logsRefreshInFlight = false;
         });
       }
-    }, 3000);
+    }, 10000);
   }
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       if (state.activeTab === "status") {
         refreshLiveStatusView();
+        if (state.monitoring.canEnabled && state.ui.statusDetailsExpanded) {
+          refreshCanDebugView();
+        }
+      }
+      if (state.activeTab === "debug") {
+        refreshDebugView();
       }
       refreshMetaView();
       if (state.activeTab === "stats") {
@@ -917,10 +1765,26 @@ function startAutoRefresh() {
   });
 }
 
+loadMonitoringPreferences();
+loadUiPreferences();
 bindFilters();
 bindActions();
-loadAll().catch((error) => {
-  addLog("초기화 실패", error.message);
-  renderRecentChanges();
-});
+const initialTab = ["status", "settings", "stats", "query"].includes(window.location.hash.slice(1))
+  || window.location.hash.slice(1) === "debug"
+  ? window.location.hash.slice(1)
+  : "status";
+state.activeTab = initialTab;
+loadAll()
+  .then(() => {
+    setActiveTab(state.activeTab);
+    if (state.monitoring.canEnabled) {
+      return refreshCanDebugView().catch(() => {});
+    }
+    renderCanSignalTools();
+    return null;
+  })
+  .catch((error) => {
+    addLog("초기화 실패", error.message);
+    renderRecentChanges();
+  });
 startAutoRefresh();

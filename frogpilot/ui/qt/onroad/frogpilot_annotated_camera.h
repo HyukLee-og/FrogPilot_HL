@@ -53,6 +53,7 @@ public:
   QRect fakeLongResRect;
   QRect fakeLongSetRect;
   QRect leadTextRect;
+  QRect currentSpeedRect;
   QRect setSpeedRect;
 
   QSize defaultSize;
@@ -68,6 +69,7 @@ private:
   void paintCurveSpeedControl(QPainter &p);
   void paintCurveSpeedControlTraining(QPainter &p);
   void paintAPNCameraAlert(QPainter &p);
+  void paintAPNNavigationBanner(QPainter &p);
   void paintBlindspotIcons(QPainter &p);
   void paintFakeLongTestUI(QPainter &p);
   void paintLateralPaused(QPainter &p);
@@ -83,6 +85,10 @@ private:
   void paintTurnSignals(QPainter &p);
   void paintWeather(QPainter &p);
   void updateSignals();
+
+public:
+  bool hasAPNCameraAlert() const { return showAPNCameraAlert; }
+  float getAPNCameraSpeed() const { return apnCameraSpeed; }
 
   bool blindspotLeft;
   bool blindspotRight;
@@ -103,6 +109,11 @@ private:
   bool fakeLongArmed;
   bool fakeLongPaused;
   bool showAPNCameraAlert;
+  bool showAPNNavigationBanner;
+  bool showAPNSectionAlert;
+  bool showAPNSectionActive;
+  bool showAPNVariableSectionAlert;
+  bool showAPNGenericSdiAlert;
 
   int animationFrameIndex;
   int desiredFollowDistance;
@@ -186,6 +197,11 @@ private:
   QSharedPointer<QMovie> weatherSnow;
 
   QString leadDistanceUnit;
+  QString apnEtaLabel;
+  QString apnRemainingDistanceLabel;
+  QString apnRemainingTimeLabel;
+  QString apnSdiCategoryLabel;
+  QString apnSdiLabel;
   QString fakeLongActiveButton;
   QString fakeLongLastButton;
   QString leadSpeedUnit;
@@ -199,4 +215,8 @@ private:
   QVector<QPixmap> blindspotImagesRight;
   QVector<QPixmap> signalImages;
   QVector<QPixmap> signalImagesRight;
+
+  int apnSdiStyle = 0;
+  int apnSdiType = 0;
+  int apnCameraType = 0;
 };

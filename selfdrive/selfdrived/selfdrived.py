@@ -49,6 +49,16 @@ SafetyModel = car.CarParams.SafetyModel
 FrogPilotEventName = custom.FrogPilotOnroadEvent.EventName
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
+RESUME_REQUIRED_SUPPRESSED_EVENTS = (
+  EventName.preDriverDistracted,
+  EventName.promptDriverDistracted,
+  EventName.driverDistracted,
+  EventName.preDriverUnresponsive,
+  EventName.promptDriverUnresponsive,
+  EventName.driverUnresponsive,
+  EventName.belowSteerSpeed,
+)
+SEATBELT_SUPPRESSED_EVENTS = (EventName.seatbeltNotLatched,)
 
 
 class SelfdriveD:
@@ -101,6 +111,7 @@ class SelfdriveD:
     self.is_metric = self.params.get_bool("IsMetric")
     self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
     self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
+    self.ignore_seatbelt_unlatched = self.params.get_bool("IgnoreSeatbeltUnlatched")
 
     car_recognized = self.CP.brand != 'mock'
 
@@ -221,6 +232,14 @@ class SelfdriveD:
     if CS.canValid:
       car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl']).to_msg()
       self.events.add_from_msg(car_events)
+
+      if self.ignore_seatbelt_unlatched:
+        self.events.remove_many(SEATBELT_SUPPRESSED_EVENTS)
+
+      # Auto-hold standstill needs to win over DM/below-steer warnings so the
+      # driver sees the action required to resume instead of unrelated alerts.
+      if EventName.resumeRequired in self.events.names:
+        self.events.remove_many(RESUME_REQUIRED_SUPPRESSED_EVENTS)
 
       if self.CP.notCar:
         # wait for everything to init first
@@ -375,10 +394,13 @@ class SelfdriveD:
       else:
         self.events.add(EventName.commIssue)
 
+      ignored_valid = set(getattr(self.sm, 'ignore_valid', []))
+      ignored_alive = set(getattr(self.sm, 'ignore_alive', []))
+      ignored_freq = set(getattr(self.sm, 'ignore_average_freq', []))
       logs = {
-        'invalid': [s for s, valid in self.sm.valid.items() if not valid],
-        'not_alive': [s for s, alive in self.sm.alive.items() if not alive],
-        'not_freq_ok': [s for s, freq_ok in self.sm.freq_ok.items() if not freq_ok],
+        'invalid': [s for s, valid in self.sm.valid.items() if not valid and s not in ignored_valid],
+        'not_alive': [s for s, alive in self.sm.alive.items() if not alive and s not in ignored_alive],
+        'not_freq_ok': [s for s, freq_ok in self.sm.freq_ok.items() if not freq_ok and s not in ignored_freq],
       }
       if logs != self.logged_comm_issue:
         cloudlog.event("commIssue", error=True, **logs)
@@ -425,14 +447,14 @@ class SelfdriveD:
           self.events.add(EventName.steerSaturated)
 
     # Check for FCW
-    stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
+    stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -2.0
     model_fcw = self.sm['modelV2'].meta.hardBrakePredicted and not stock_long_is_braking
     planner_fcw = self.sm['longitudinalPlan'].fcw and self.enabled
     lead_one = self.sm['radarState'].leadOne
     lead_fcw = False
-    if CS.vEgo > 8.33 and lead_one.status and lead_one.dRel < 30 and lead_one.vRel < -3.0:
+    if CS.vEgo > 6.94 and lead_one.status and lead_one.dRel < 35 and lead_one.vRel < -2.0:
       ttc = lead_one.dRel / -lead_one.vRel
-      lead_fcw = ttc < 2.5
+      lead_fcw = ttc < 3.0
 
     if (planner_fcw or model_fcw or lead_fcw) and not self.CP.notCar:
       self.events.add(EventName.fcw)
@@ -621,6 +643,7 @@ class SelfdriveD:
       self.is_metric = self.params.get_bool("IsMetric")
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
+      self.ignore_seatbelt_unlatched = self.params.get_bool("IgnoreSeatbeltUnlatched")
       if not self.frogpilot_toggles.conditional_experimental_mode:
         self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)

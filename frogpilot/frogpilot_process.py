@@ -3,7 +3,8 @@ import datetime
 import json
 import time
 
-from cereal import messaging
+from cereal import car, custom, messaging
+from opendbc.car.gm.values import GMSafetyFlags
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL, Priority, Ratekeeper, config_realtime_process
 from openpilot.common.time_helpers import system_time_valid
@@ -103,7 +104,43 @@ def update_toggles(frogpilot_variables, started, theme_manager, thread_manager, 
   if time_validated and not started:
     thread_manager.run_with_lock(backup_toggles, (params))
 
+  refresh_frogpilot_carparams(params, frogpilot_toggles, started)
+
   return frogpilot_toggles
+
+def refresh_frogpilot_carparams(params, frogpilot_toggles, started):
+  cp_key = "CarParams" if started else "CarParamsPersistent"
+  fpcp_key = "FrogPilotCarParams" if started else "FrogPilotCarParamsPersistent"
+
+  cp_bytes = params.get(cp_key)
+  fpcp_bytes = params.get(fpcp_key)
+  if not cp_bytes or not fpcp_bytes:
+    return
+
+  CP = messaging.log_from_bytes(cp_bytes, car.CarParams)
+  if CP.brand != "gm":
+    return
+
+  fake_long_button_mask = GMSafetyFlags.FLAG_GM_FAKE_LONG_BUTTONS.value
+  enable_fake_long_buttons = CP.pcmCruise and not CP.openpilotLongitudinalControl and CP.networkLocation == car.CarParams.NetworkLocation.fwdCamera
+  enable_fake_long_buttons &= (frogpilot_toggles.fake_long or frogpilot_toggles.fake_long_test_ui or frogpilot_toggles.apn_fake_long)
+
+  with custom.FrogPilotCarParams.from_bytes(fpcp_bytes) as current_fpcp:
+    fpcp_builder = current_fpcp.as_builder()
+    if len(fpcp_builder.safetyConfigs) == 0:
+      return
+
+    current_safety_param = int(fpcp_builder.safetyConfigs[0].safetyParam)
+    updated_safety_param = (current_safety_param | fake_long_button_mask) if enable_fake_long_buttons else (current_safety_param & ~fake_long_button_mask)
+    if updated_safety_param != current_safety_param:
+      fpcp_builder.safetyConfigs[0].safetyParam = updated_safety_param
+      updated_fpcp_bytes = fpcp_builder.to_bytes()
+    else:
+      updated_fpcp_bytes = fpcp_bytes
+
+  if updated_safety_param != current_safety_param:
+    params.put_nonblocking("FrogPilotCarParamsPersistent", updated_fpcp_bytes)
+  params.put("FrogPilotCarParams", updated_fpcp_bytes)
 
 def frogpilot_thread():
   rate_keeper = Ratekeeper(1 / DT_MDL, None)
@@ -142,6 +179,9 @@ def frogpilot_thread():
 
     raw_started = sm["deviceState"].started or params.get_bool("ForceOnroad")
     started, started_false_since = debounce_started_state(raw_started, started_previously, started_false_since)
+
+    # Keep the live FrogPilotCarParams synchronized after manager-start/onroad clears.
+    refresh_frogpilot_carparams(params, frogpilot_toggles, started)
 
     if not started and started_previously:
       frogpilot_tracking.flush(now, time_validated)
