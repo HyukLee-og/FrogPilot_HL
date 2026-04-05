@@ -303,13 +303,15 @@ void HudRenderer::drawSeatbeltIcon(QPainter &p, const QRect &surface_rect) {
   const int group_top = surface_rect.height() - 246;
   const int center_x = surface_rect.center().x();
   const QRect speed_rect(center_x - 230, group_top - 18, 460, 162);
-  const QRect icon_rect(speed_rect.left() - 20, speed_rect.top() + 2, LFA_ICON_SIZE, LFA_ICON_SIZE);
+  const int icon_height = LFA_ICON_SIZE;
+  const int icon_width = std::lround(float(seatbelt_img.width()) * float(icon_height) / float(seatbelt_img.height()));
+  const QRect icon_rect(speed_rect.left() - 10 - icon_width, speed_rect.top() + 2, icon_width, icon_height);
 
   p.save();
   p.setRenderHint(QPainter::Antialiasing);
   p.setPen(Qt::NoPen);
 
-  QRect glow_rect = icon_rect.adjusted(-20, -18, 20, 20);
+  QRect glow_rect = icon_rect.adjusted(-18, -18, 18, 18);
   QRadialGradient glow(glow_rect.center(), glow_rect.width() * 0.55);
   glow.setColorAt(0.0, QColor(0xFF, 0x45, 0x45, 84));
   glow.setColorAt(0.45, QColor(0xFF, 0x45, 0x45, 36));

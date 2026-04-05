@@ -15,6 +15,8 @@
 * 알럿 / HUD / 설정
   * `More` 아래에 `안전벨트 착용 여부 미확인` 토글 추가. 명시적으로 켠 경우에만 안전벨트 no-entry를 무시하도록 구성
   * 안전벨트 미착용 시 현재 속도 HUD 좌상단에 안전벨트 아이콘 추가
+  * 안전벨트 no-entry 우회는 사후 이벤트 제거가 아니라 car-event 생성 전 seatbelt 상태를 가리는 방식으로 정리
+  * 안전벨트 아이콘은 원본 비율을 유지하도록 수정해, HUD에서 찌그러지지 않게 정리
   * auto hold 활성 중에는 `resumeRequired`가 운전자 부주의/무반응 및 `belowSteerSpeed`보다 우선되도록 알럿 우선순위 조정
   * `P + 정차` 상태에서는 `parking.png`, `정차중`, 경과 타이머를 포함하는 전체 화면 dim 방식의 parked standstill onroad 오버레이 추가
 * 자동 밝기
