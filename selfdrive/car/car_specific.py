@@ -48,6 +48,7 @@ class CarSpecificEvents:
     self.low_speed_alert = False
     self.no_steer_warning = False
     self.silent_steer_warning = True
+    self.ignore_seatbelt_unlatched = False
 
   def update(self, CS: car.CarState, CS_prev: car.CarState, CC: car.CarControl):
     extra_gears = BRAND_EXTRA_GEARS.get(self.CP.brand, None)
@@ -152,7 +153,7 @@ class CarSpecificEvents:
 
     if CS.doorOpen:
       events.add(EventName.doorOpen)
-    if CS.seatbeltUnlatched:
+    if CS.seatbeltUnlatched and not self.ignore_seatbelt_unlatched:
       events.add(EventName.seatbeltNotLatched)
     if CS.gearShifter != GearShifter.drive and (extra_gears is None or
        CS.gearShifter not in extra_gears):

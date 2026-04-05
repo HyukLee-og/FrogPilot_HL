@@ -230,17 +230,8 @@ class SelfdriveD:
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:
-      # Suppress seatbelt no-entry at the source so engageability and alerts
-      # do not depend on later event cleanup timing.
-      seatbelt_unlatched_prev = CS.seatbeltUnlatched
-      if self.ignore_seatbelt_unlatched:
-        CS.seatbeltUnlatched = False
-
+      self.car_events.ignore_seatbelt_unlatched = self.ignore_seatbelt_unlatched
       car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl']).to_msg()
-
-      if self.ignore_seatbelt_unlatched:
-        CS.seatbeltUnlatched = seatbelt_unlatched_prev
-
       self.events.add_from_msg(car_events)
 
       if self.ignore_seatbelt_unlatched:

@@ -116,6 +116,7 @@
 관련 파일:
 
 - `common/params_keys.h`
+- `selfdrive/car/car_specific.py`
 - `selfdrive/ui/qt/offroad/settings.cc`
 - `selfdrive/selfdrived/selfdrived.py`
 - `selfdrive/ui/qt/onroad/hud.cc`
@@ -126,7 +127,8 @@
 
 - `More` 에 `안전벨트 착용 여부 미확인` 토글 추가
 - 초기 구현은 `seatbeltNotLatched` 이벤트를 selfdrived 단계에서 사후 제거하는 방식이었음
-- 이후 `IgnoreSeatbeltUnlatched` 가 켜졌을 때는 car event 생성 전에 `CS.seatbeltUnlatched` 를 임시로 가려, no-entry 자체가 생성되지 않도록 수정
+- 이후 `IgnoreSeatbeltUnlatched` 가 켜졌을 때는 `car_specific.py` 의 car event 생성 단계에서 `seatbeltNotLatched` 자체가 만들어지지 않도록 수정
+- 중간에 `selfdrived` 에서 capnp reader 필드를 직접 수정하려다 크래시가 발생했고, 최종적으로는 위 방식으로 정리
 - 현재 속도 패널 좌측 상단에 `seatbelt.png` 를 추가
   - `carState.seatbeltUnlatched = true` 일 때만 표시
   - 착용 시 즉시 숨김
