@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -25,6 +26,9 @@ APN_STATE_PATH = Path("/data/media/0/apn_bridge/bridge_state.json") if Path("/da
 APN_HTTP_PATH = Path("/data/media/0/apn_bridge/latest_carrot_http.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "apn_bridge" / "latest_carrot_http.json"
 APN_LABELS_PATH = Path("/data/media/0/apn_bridge/sdi_labels.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "apn_bridge" / "sdi_labels.json"
 CAN_LABELS_PATH = Path("/data/media/0/button_sniff/can_labels.json") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "button_sniff" / "can_labels.json"
+OFFROAD_MEDIA_ROOT = Path("/data/media/0/device_dashboard") if Path("/data/media/0").exists() else REPO_ROOT / ".codex_tmp" / "device_dashboard"
+OFFROAD_SNAPSHOT_DIR = OFFROAD_MEDIA_ROOT / "snapshots"
+OFFROAD_LIVE_DIR = OFFROAD_MEDIA_ROOT / "live"
 
 if str(REPO_ROOT) not in sys.path:
   sys.path.insert(0, str(REPO_ROOT))
@@ -72,7 +76,7 @@ class ParamMeta:
 
 
 class LiveStateReader:
-  SERVICES = ["carState", "selfdriveState", "deviceState", "pandaStates", "peripheralState"]
+  SERVICES = ["carState", "selfdriveState", "deviceState", "pandaStates", "peripheralState", "gpsLocation", "gpsLocationExternal"]
 
   def __init__(self) -> None:
     self.available = messaging is not None
@@ -102,6 +106,8 @@ class LiveStateReader:
           "deviceState": self._sm["deviceState"],
           "pandaStates": list(self._sm["pandaStates"]),
           "peripheralState": self._sm["peripheralState"],
+          "gpsLocation": self._sm["gpsLocation"],
+          "gpsLocationExternal": self._sm["gpsLocationExternal"],
         }
       except Exception as exc:
         self.available = False
@@ -336,6 +342,9 @@ STATUS_CACHE_TTL = 1.0
 CAN_DEBUG_CACHE_TTL = 2.0
 CAN_DEBUG_STALE_RETENTION_SEC = 600.0
 DEBUG_CACHE_TTL = 2.0
+OFFROAD_AUTO_SNAPSHOT_STALE_SEC = 60 * 60
+OFFROAD_AUTO_WEB_REFRESH_COOLDOWN_SEC = 60 * 60
+OFFROAD_AUTO_EVENT_COOLDOWN_SEC = 12.0
 
 GIT_BRANCH = ""
 GIT_COMMIT = ""
@@ -351,6 +360,151 @@ _STATUS_CACHE: dict[str, Any] = {
 _CAN_DEBUG_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
 _CAN_DEBUG_OBSERVED: dict[str, dict[str, Any]] = {}
 _DEBUG_CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
+_OFFROAD_CAMERA_LOCK = threading.Lock()
+_OFFROAD_AUTO_STATE: dict[str, Any] = {
+  "last_ignition": None,
+  "last_onroad": None,
+  "last_auto_snapshot_at": 0.0,
+  "last_auto_reason": "",
+  "last_web_refresh_at": 0.0,
+  "worker": None,
+}
+
+
+def ensure_offroad_dirs() -> None:
+  OFFROAD_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+  OFFROAD_LIVE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class OffroadLivePreviewManager:
+  CAMERA_TO_STREAM = {
+    "wide": "wideRoadCameraState",
+    "driver": "driverCameraState",
+  }
+
+  def __init__(self) -> None:
+    self._lock = threading.Lock()
+    self._stop_event = threading.Event()
+    self._thread: threading.Thread | None = None
+    self._state = {
+      "active": False,
+      "camera": "",
+      "startedAt": 0.0,
+      "updatedAt": 0.0,
+      "error": "",
+      "url": "",
+    }
+
+  def status(self) -> dict[str, Any]:
+    with self._lock:
+      return dict(self._state)
+
+  def start(self, camera: str) -> dict[str, Any]:
+    normalized = str(camera or "").strip().lower()
+    if normalized not in self.CAMERA_TO_STREAM:
+      raise ValueError("camera must be one of: wide, driver")
+
+    self.stop()
+    ensure_offroad_dirs()
+
+    with self._lock:
+      self._stop_event = threading.Event()
+      self._state = {
+        "active": True,
+        "camera": normalized,
+        "startedAt": time.time(),
+        "updatedAt": 0.0,
+        "error": "",
+        "url": f"/api/offroad/media/live/{normalized}.jpg",
+      }
+      self._thread = threading.Thread(target=self._run, args=(normalized, self._stop_event), daemon=True)
+      self._thread.start()
+      return dict(self._state)
+
+  def stop(self) -> None:
+    thread: threading.Thread | None = None
+    with self._lock:
+      if self._thread is None:
+        self._state["active"] = False
+        return
+      self._stop_event.set()
+      thread = self._thread
+      self._thread = None
+
+    if thread is not None:
+      thread.join(timeout=2.0)
+
+    with self._lock:
+      self._state["active"] = False
+
+  def _set_error(self, camera: str, error: str) -> None:
+    with self._lock:
+      self._state.update({
+        "active": False,
+        "camera": camera,
+        "error": error,
+      })
+      self._thread = None
+
+  def _set_frame_timestamp(self) -> None:
+    with self._lock:
+      self._state["updatedAt"] = time.time()
+
+  def _run(self, camera: str, stop_event: threading.Event) -> None:
+    camerad_started = False
+    try:
+      from openpilot.system.manager.process_config import managed_processes
+      from openpilot.system.camerad.snapshot import extract_image
+      from msgq.visionipc import VisionIpcClient, VisionStreamType
+      from PIL import Image
+    except Exception as exc:
+      self._set_error(camera, f"live preview import failed: {exc}")
+      return
+
+    stream_type = {
+      "wide": VisionStreamType.VISION_STREAM_WIDE_ROAD,
+      "driver": VisionStreamType.VISION_STREAM_DRIVER,
+    }[camera]
+    output_path = OFFROAD_LIVE_DIR / f"{camera}.jpg"
+
+    with _OFFROAD_CAMERA_LOCK:
+      try:
+        camerad_running = subprocess.run(["pgrep", "-x", "camerad"], capture_output=True, check=False).returncode == 0
+        if not camerad_running:
+          managed_processes["camerad"].start()
+          camerad_started = True
+          time.sleep(2.0)
+
+        client = VisionIpcClient("camerad", stream_type, True)
+        if not client.connect(True):
+          raise RuntimeError("visionipc connect failed")
+
+        last_write = 0.0
+        while not stop_event.is_set():
+          frame = client.recv()
+          if frame is None:
+            time.sleep(0.05)
+            continue
+
+          now = time.monotonic()
+          if now - last_write < 0.35:
+            continue
+
+          image = Image.fromarray(extract_image(frame))
+          image.save(output_path, "JPEG", quality=84)
+          last_write = now
+          self._set_frame_timestamp()
+      except Exception as exc:
+        self._set_error(camera, str(exc))
+      finally:
+        if camerad_started:
+          try:
+            managed_processes["camerad"].stop()
+          except Exception:
+            pass
+
+
+OFFROAD_LIVE_PREVIEW = OffroadLivePreviewManager()
 
 
 def split_top_level(text: str) -> list[str]:
@@ -680,6 +834,266 @@ def read_json_file(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text())
   except Exception:
     return {}
+
+
+def parse_last_gps_position(params: dict[str, dict[str, Any]]) -> dict[str, Any]:
+  raw = param_value(params, "LastGPSPosition", "{}")
+  if not isinstance(raw, str):
+    return {}
+  try:
+    value = json.loads(raw)
+  except Exception:
+    return {}
+  return value if isinstance(value, dict) else {}
+
+
+def choose_gps_payload(live: dict[str, Any], params: dict[str, dict[str, Any]]) -> dict[str, Any]:
+  seen = live.get("seen", {})
+  external_seen = bool(seen.get("gpsLocationExternal"))
+  internal_seen = bool(seen.get("gpsLocation"))
+
+  gps = live.get("gpsLocationExternal") if external_seen else live.get("gpsLocation") if internal_seen else None
+  latitude = float(getattr(gps, "latitude", 0.0) or 0.0) if gps is not None else 0.0
+  longitude = float(getattr(gps, "longitude", 0.0) or 0.0) if gps is not None else 0.0
+  bearing = float(getattr(gps, "bearingDeg", 0.0) or 0.0) if gps is not None else 0.0
+  speed = float(getattr(gps, "speed", 0.0) or 0.0) if gps is not None else 0.0
+  accuracy = float(getattr(gps, "horizontalAccuracy", 0.0) or 0.0) if gps is not None else 0.0
+
+  if latitude == 0.0 and longitude == 0.0:
+    last = parse_last_gps_position(params)
+    latitude = float(last.get("latitude", 0.0) or 0.0)
+    longitude = float(last.get("longitude", 0.0) or 0.0)
+    bearing = float(last.get("bearing", 0.0) or 0.0)
+
+  has_fix = latitude != 0.0 or longitude != 0.0
+  map_url = f"https://maps.google.com/?q={latitude:.6f},{longitude:.6f}" if has_fix else ""
+  return {
+    "hasFix": has_fix,
+    "latitude": round(latitude, 6) if has_fix else 0.0,
+    "longitude": round(longitude, 6) if has_fix else 0.0,
+    "bearing": round(bearing, 1) if has_fix else 0.0,
+    "speedKph": round(speed * 3.6, 1) if speed else 0.0,
+    "accuracyM": round(accuracy, 1) if accuracy else 0.0,
+    "mapUrl": map_url,
+    "label": f"{latitude:.6f}, {longitude:.6f}" if has_fix else "위치 정보 없음",
+  }
+
+
+def offroad_media_url(kind: str, name: str) -> str:
+  return f"/api/offroad/media/{kind}/{name}"
+
+
+def snapshot_metadata(camera: str) -> dict[str, Any]:
+  jpg_path = OFFROAD_SNAPSHOT_DIR / f"{camera}.jpg"
+  svg_path = OFFROAD_SNAPSHOT_DIR / f"{camera}.svg"
+  path = jpg_path if jpg_path.exists() else svg_path if svg_path.exists() else jpg_path
+  if not path.exists():
+    return {
+      "camera": camera,
+      "available": False,
+      "url": "",
+      "updatedAt": 0.0,
+      "label": "캡처 없음",
+    }
+  updated_at = path.stat().st_mtime
+  return {
+    "camera": camera,
+    "available": True,
+    "url": offroad_media_url("snapshots", path.name),
+    "updatedAt": updated_at,
+    "label": time.strftime("%H:%M:%S", time.localtime(updated_at)),
+  }
+
+
+def snapshots_stale(max_age_sec: float) -> bool:
+  newest = 0.0
+  for camera in ("wide", "driver"):
+    meta = snapshot_metadata(camera)
+    if not meta.get("available"):
+      return True
+    newest = max(newest, float(meta.get("updatedAt") or 0.0))
+  if newest <= 0.0:
+    return True
+  return (time.time() - newest) >= max_age_sec
+
+
+def build_placeholder_snapshot(camera: str) -> None:
+  ensure_offroad_dirs()
+  jpg_path = OFFROAD_SNAPSHOT_DIR / f"{camera}.jpg"
+  svg_path = OFFROAD_SNAPSHOT_DIR / f"{camera}.svg"
+  if jpg_path.exists() or svg_path.exists():
+    return
+
+  try:
+    from PIL import Image, ImageDraw
+  except Exception:
+    label = "WIDE SNAPSHOT" if camera == "wide" else "DM SNAPSHOT"
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<defs>
+  <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+    <stop offset="0%" stop-color="#08121d"/>
+    <stop offset="100%" stop-color="#112638"/>
+  </linearGradient>
+</defs>
+<rect width="1280" height="720" fill="url(#bg)"/>
+<rect x="40" y="40" width="1200" height="640" rx="28" fill="#10212f" stroke="#587c9c" stroke-width="4"/>
+<text x="120" y="360" fill="#eef4fb" font-size="64" font-family="Arial, Helvetica, sans-serif">{label}</text>
+</svg>
+"""
+    write_atomic(svg_path, svg.encode("utf-8"))
+    return
+
+  image = Image.new("RGB", (1280, 720), (10, 22, 34))
+  draw = ImageDraw.Draw(image)
+  draw.rounded_rectangle((40, 40, 1240, 680), radius=28, fill=(18, 36, 52), outline=(88, 124, 156), width=4)
+  label = "WIDE SNAPSHOT" if camera == "wide" else "DM SNAPSHOT"
+  draw.text((120, 320), label, fill=(236, 244, 251))
+  image.save(jpg_path, "JPEG", quality=84)
+
+
+def offroad_camera_allowed() -> tuple[bool, str]:
+  live = LIVE_READER.snapshot()
+  if not live.get("available"):
+    return (not Path("/data/params").exists(), "live messaging unavailable")
+
+  device_state = live.get("deviceState")
+  panda_states = live.get("pandaStates", [])
+  ignition = any(bool(p.ignitionLine or p.ignitionCan) for p in panda_states) if panda_states else False
+  onroad = bool(getattr(device_state, "started", False)) if device_state is not None else False
+  if ignition or onroad:
+    return False, "시동이 켜져 있거나 onroad 상태에서는 offroad 카메라 조회를 시작할 수 없습니다."
+  return True, ""
+
+
+def take_offroad_snapshot(camera: str) -> dict[str, Any]:
+  normalized = str(camera or "").strip().lower()
+  if normalized not in {"wide", "driver", "both"}:
+    raise ValueError("camera must be one of: wide, driver, both")
+
+  ensure_offroad_dirs()
+  OFFROAD_LIVE_PREVIEW.stop()
+
+  if not Path("/data/params").exists():
+    targets = ["wide", "driver"] if normalized == "both" else [normalized]
+    for target in targets:
+      build_placeholder_snapshot(target)
+    return {
+      "ok": True,
+      "mode": "mock",
+      "snapshots": {
+        "wide": snapshot_metadata("wide"),
+        "driver": snapshot_metadata("driver"),
+      },
+    }
+
+  allowed, reason = offroad_camera_allowed()
+  if not allowed:
+    raise RuntimeError(reason)
+
+  try:
+    from openpilot.system.camerad.snapshot import snapshot as capture_snapshot
+    from openpilot.system.camerad.snapshot import jpeg_write
+  except Exception as exc:
+    raise RuntimeError(f"snapshot import failed: {exc}") from exc
+
+  with _OFFROAD_CAMERA_LOCK:
+    rear, front = capture_snapshot()
+    if normalized in {"wide", "both"} and rear is not None:
+      jpeg_write(str(OFFROAD_SNAPSHOT_DIR / "wide.jpg"), rear)
+    if normalized in {"driver", "both"} and front is not None:
+      jpeg_write(str(OFFROAD_SNAPSHOT_DIR / "driver.jpg"), front)
+
+  return {
+    "ok": True,
+    "mode": "device",
+    "snapshots": {
+      "wide": snapshot_metadata("wide"),
+      "driver": snapshot_metadata("driver"),
+    },
+  }
+
+
+def _auto_snapshot_worker(reason: str) -> None:
+  try:
+    take_offroad_snapshot("both")
+  except Exception:
+    pass
+  finally:
+    _OFFROAD_AUTO_STATE["last_auto_snapshot_at"] = time.time()
+    _OFFROAD_AUTO_STATE["last_auto_reason"] = reason
+    _OFFROAD_AUTO_STATE["worker"] = None
+    invalidate_runtime_caches()
+
+
+def schedule_offroad_auto_snapshot(reason: str, cooldown_sec: float) -> bool:
+  now = time.time()
+  worker = _OFFROAD_AUTO_STATE.get("worker")
+  if isinstance(worker, threading.Thread) and worker.is_alive():
+    return False
+  if now - float(_OFFROAD_AUTO_STATE.get("last_auto_snapshot_at") or 0.0) < cooldown_sec:
+    return False
+  if OFFROAD_LIVE_PREVIEW.status().get("active"):
+    return False
+
+  thread = threading.Thread(target=_auto_snapshot_worker, args=(reason,), daemon=True)
+  _OFFROAD_AUTO_STATE["worker"] = thread
+  thread.start()
+  return True
+
+
+def maybe_schedule_offroad_snapshot(ignition: bool, is_onroad: bool) -> None:
+  previous_ignition = _OFFROAD_AUTO_STATE.get("last_ignition")
+  previous_onroad = _OFFROAD_AUTO_STATE.get("last_onroad")
+  _OFFROAD_AUTO_STATE["last_ignition"] = ignition
+  _OFFROAD_AUTO_STATE["last_onroad"] = is_onroad
+
+  if ignition or is_onroad:
+    return
+
+  just_turned_off = (previous_ignition is True or previous_onroad is True) and (not ignition and not is_onroad)
+  if just_turned_off:
+    schedule_offroad_auto_snapshot("ignition_off", 0.0)
+    return
+
+  if snapshots_stale(OFFROAD_AUTO_SNAPSHOT_STALE_SEC):
+    last_web_refresh_at = float(_OFFROAD_AUTO_STATE.get("last_web_refresh_at") or 0.0)
+    if (time.time() - last_web_refresh_at) >= OFFROAD_AUTO_WEB_REFRESH_COOLDOWN_SEC:
+      if schedule_offroad_auto_snapshot("web_stale_refresh", OFFROAD_AUTO_WEB_REFRESH_COOLDOWN_SEC):
+        _OFFROAD_AUTO_STATE["last_web_refresh_at"] = time.time()
+
+
+def build_offroad_console(params: dict[str, dict[str, Any]], live: dict[str, Any], car_state: Any, device_state: Any, panda_states: list[Any]) -> dict[str, Any]:
+  panda_seen = len(panda_states) > 0
+  ignition = any(bool(p.ignitionLine or p.ignitionCan) for p in panda_states) if panda_seen else False
+  is_onroad = bool(getattr(device_state, "started", False)) if device_state is not None else bool(param_value(params, "IsOnroad", False))
+  maybe_schedule_offroad_snapshot(ignition, is_onroad)
+
+  location = choose_gps_payload(live, params)
+  if not Path("/data/params").exists():
+    build_placeholder_snapshot("wide")
+    build_placeholder_snapshot("driver")
+
+  return {
+    "visible": not ignition and not is_onroad,
+    "ignition": ignition,
+    "onroad": is_onroad,
+    "vehicle": {
+      "displayName": (param_value(params, "CarModelName", "-") or param_value(params, "CarModel", "-") or "-"),
+      "gear": GEAR.get(maybe_raw(getattr(car_state, "gearShifter", 0)), "-") if car_state is not None else "-",
+      "standstill": bool(getattr(car_state, "standstill", False)) if car_state is not None else False,
+      "parkingBrake": bool(getattr(car_state, "parkingBrake", False)) if car_state is not None else False,
+      "doorOpen": bool(getattr(car_state, "doorOpen", False)) if car_state is not None else False,
+      "seatbeltUnlatched": bool(getattr(car_state, "seatbeltUnlatched", False)) if car_state is not None else False,
+      "carVoltage": format_voltage(getattr(live.get("peripheralState"), "voltage", 0)) if live.get("peripheralState") is not None else "-",
+      "updatedAt": time.time(),
+    },
+    "location": location,
+    "snapshots": {
+      "wide": snapshot_metadata("wide"),
+      "driver": snapshot_metadata("driver"),
+    },
+    "livePreview": OFFROAD_LIVE_PREVIEW.status(),
+  }
 
 
 def as_int(value: Any, default: int = 0) -> int:
@@ -1554,6 +1968,7 @@ def build_status(compact: bool = False) -> dict[str, Any]:
       "updatedAt": time.time(),
     },
     "apn": apn,
+    "offroadConsole": build_offroad_console(params, live, car_state if car_seen else None, device_state if device_seen else None, panda_states),
     "device": {
       "branch": GIT_BRANCH,
       "commit": GIT_COMMIT,
@@ -1644,6 +2059,7 @@ def build_status(compact: bool = False) -> dict[str, Any]:
     payload = {
       "runtime": payload["runtime"],
       "apn": payload["apn"],
+      "offroadConsole": payload["offroadConsole"],
       "device": {},
       "openpilot": {},
       "vehicle": {},
@@ -1845,6 +2261,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     self.end_headers()
     self.wfile.write(body)
 
+  def send_binary(self, path: Path, content_type: str) -> None:
+    if not path.exists():
+      self.send_json({"error": "not found"}, status=404)
+      return
+    body = path.read_bytes()
+    self.send_response(200)
+    self.send_header("Content-Type", content_type)
+    self.send_header("Content-Length", str(len(body)))
+    self.send_header("Cache-Control", "no-store")
+    self.end_headers()
+    self.wfile.write(body)
+
   def read_json(self) -> dict[str, Any]:
     length = int(self.headers.get("Content-Length", "0"))
     raw = self.rfile.read(length) if length else b"{}"
@@ -1876,6 +2304,21 @@ class DashboardHandler(SimpleHTTPRequestHandler):
       return
     if parsed.path == "/api/debug":
       self.send_json(build_debug())
+      return
+    if parsed.path == "/api/offroad/live/status":
+      self.send_json({"livePreview": OFFROAD_LIVE_PREVIEW.status()})
+      return
+    if parsed.path.startswith("/api/offroad/media/"):
+      suffix = parsed.path.removeprefix("/api/offroad/media/").strip("/")
+      if suffix.startswith("snapshots/"):
+        target = OFFROAD_SNAPSHOT_DIR / suffix.removeprefix("snapshots/")
+      elif suffix.startswith("live/"):
+        target = OFFROAD_LIVE_DIR / suffix.removeprefix("live/")
+      else:
+        self.send_json({"error": "unsupported media path"}, status=404)
+        return
+      content_type = "image/svg+xml" if target.suffix.lower() == ".svg" else "image/jpeg"
+      self.send_binary(target, content_type)
       return
     if parsed.path == "/api/stats":
       self.send_json(build_stats())
@@ -1939,6 +2382,36 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.send_json({"ok": True, "command": payload, "debug": build_debug()})
       except Exception as exc:
         self.send_json({"error": str(exc)}, status=400)
+      return
+
+    if parsed.path == "/api/offroad/snapshot":
+      try:
+        payload = self.read_json()
+        self.send_json(take_offroad_snapshot(str(payload.get("camera", "both") or "both")))
+        invalidate_runtime_caches()
+      except Exception as exc:
+        self.send_json({"error": str(exc)}, status=400)
+      return
+
+    if parsed.path == "/api/offroad/live/start":
+      try:
+        if not Path("/data/params").exists():
+          raise RuntimeError("실시간 카메라 조회는 기기에서만 지원합니다.")
+        payload = self.read_json()
+        camera = str(payload.get("camera", "wide") or "wide")
+        allowed, reason = offroad_camera_allowed()
+        if not allowed:
+          raise RuntimeError(reason)
+        self.send_json({"ok": True, "livePreview": OFFROAD_LIVE_PREVIEW.start(camera)})
+        invalidate_runtime_caches()
+      except Exception as exc:
+        self.send_json({"error": str(exc)}, status=400)
+      return
+
+    if parsed.path == "/api/offroad/live/stop":
+      OFFROAD_LIVE_PREVIEW.stop()
+      invalidate_runtime_caches()
+      self.send_json({"ok": True, "livePreview": OFFROAD_LIVE_PREVIEW.status()})
       return
 
     if not parsed.path.startswith("/api/params/"):

@@ -157,7 +157,7 @@ OnroadAlerts::Alert OnroadAlerts::getAlert(const SubMaster &sm, const SubMaster 
     // Handle selfdrive timeout
     if (selfdrive_frame < started_frame) {
       // car is started, but selfdriveState hasn't been seen at all
-      a = Alert{tr("openpilot Unavailable"), tr("Waiting to start"),
+      a = Alert{tr("오픈파일럿 준비중"), tr("주행 제어 시스템 부팅중입니다"),
                 "selfdriveWaiting", cereal::SelfdriveState::AlertSize::MID,
                 cereal::SelfdriveState::AlertStatus::NORMAL};
     } else if (ss_missing > SELFDRIVE_STATE_TIMEOUT && !Hardware::PC()) {

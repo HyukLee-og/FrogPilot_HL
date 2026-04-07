@@ -28,6 +28,7 @@ const state = {
   },
   ui: {
     statusDetailsExpanded: false,
+    offroadCameraMode: "wide",
   },
 };
 
@@ -41,6 +42,7 @@ let debugRefreshTimer = null;
 let metaRefreshTimer = null;
 let statsRefreshTimer = null;
 let logsRefreshTimer = null;
+let offroadLiveImageTimer = null;
 let statusRefreshInFlight = false;
 let canRefreshInFlight = false;
 let debugRefreshInFlight = false;
@@ -370,6 +372,144 @@ function renderStatusHero() {
   }
 }
 
+function isOffroadConsoleVisible() {
+  return Boolean(state.status?.offroadConsole?.visible);
+}
+
+function syncOffroadLiveImageRefresh() {
+  const livePreview = state.status?.offroadConsole?.livePreview;
+  const activeCamera = state.ui.offroadCameraMode === "driver" ? "driver" : "wide";
+  if (!isOffroadConsoleVisible() || !livePreview?.active || !livePreview.camera || livePreview.camera !== activeCamera || document.hidden) {
+    if (offroadLiveImageTimer) {
+      window.clearInterval(offroadLiveImageTimer);
+      offroadLiveImageTimer = null;
+    }
+    return;
+  }
+
+  if (offroadLiveImageTimer) return;
+  offroadLiveImageTimer = window.setInterval(() => {
+    const img = $("offroadCameraImage");
+    if (!img || !livePreview.url) return;
+    img.src = `${livePreview.url}?ts=${Date.now()}`;
+  }, 700);
+}
+
+function renderOffroadCameraCard(camera, snapshot, livePreview) {
+  const image = $("offroadCameraImage");
+  const empty = $("offroadCameraEmpty");
+  const stamp = $("offroadCameraStamp");
+  const liveButton = $("offroadCameraLiveButton");
+  const switchButton = $("offroadCameraSwitchButton");
+  const kicker = $("offroadCameraKicker");
+  const title = $("offroadCameraTitle");
+  if (!image || !empty || !stamp || !liveButton || !switchButton || !kicker || !title) return;
+
+  const liveActive = Boolean(livePreview?.active && livePreview.camera === camera);
+  const liveUrl = liveActive && livePreview?.url ? `${livePreview.url}?ts=${Date.now()}` : "";
+  const snapshotUrl = snapshot?.available && snapshot?.url ? `${snapshot.url}?ts=${Math.round((snapshot.updatedAt || 0) * 1000)}` : "";
+  const targetUrl = liveUrl || snapshotUrl;
+  const isWide = camera === "wide";
+
+  setExactText(kicker, isWide ? "WIDE CAMERA" : "DRIVER MONITORING");
+  setExactText(title, isWide ? "Wide" : "Driver");
+  setExactText(switchButton, isWide ? "실내" : "실외");
+
+  image.style.display = targetUrl ? "block" : "none";
+  empty.style.display = targetUrl ? "none" : "grid";
+  if (targetUrl && image.src !== targetUrl) {
+    image.src = targetUrl;
+  }
+
+  if (liveActive) {
+    setExactText(stamp, livePreview.updatedAt ? `실시간 갱신 ${formatTimeLabel(livePreview.updatedAt)}` : "실시간 연결 중");
+    setExactText(liveButton, "STOP");
+  } else if (snapshot?.available) {
+    setExactText(stamp, `최근 캡처 ${formatTimeLabel(snapshot.updatedAt)}`);
+    setExactText(liveButton, "LIVE");
+  } else {
+    setExactText(stamp, "캡처 없음");
+    setExactText(liveButton, "LIVE");
+  }
+}
+
+function renderOffroadMetricGrid(gridId, entries) {
+  const grid = $(gridId);
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  entries.forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.className = "offroad-metric";
+
+    const body = document.createElement("div");
+    body.className = "offroad-metric-body";
+
+    const labelNode = document.createElement("span");
+    labelNode.className = "offroad-metric-label";
+    labelNode.textContent = label;
+
+    const valueNode = document.createElement("strong");
+    valueNode.className = "offroad-metric-value";
+    valueNode.textContent = formatValue(value);
+
+    body.appendChild(labelNode);
+    body.appendChild(valueNode);
+    item.appendChild(body);
+    grid.appendChild(item);
+  });
+}
+
+function renderOffroadConsole() {
+  if (!state.status?.offroadConsole) return;
+  const offroad = state.status.offroadConsole;
+  const vehicle = offroad.vehicle || {};
+  const location = offroad.location || {};
+  const livePreview = offroad.livePreview || {};
+
+  setExactText("offroadConsoleTitle", vehicle.displayName || "차량");
+  const locationSummary = location.hasFix
+    ? `${location.label}${location.accuracyM ? ` · ±${location.accuracyM.toFixed(1)} m` : ""}`
+    : "위치 정보 없음";
+  setExactText("offroadConsoleSubtitle", locationSummary);
+
+  const ignitionChip = $("offroadIgnitionChip");
+  setExactText(ignitionChip, offroad.ignition ? "IGNITION ON" : "IGNITION OFF");
+  setClass(ignitionChip, `pill ${offroad.ignition ? "warn" : "neutral"}`);
+
+  const liveChip = $("offroadLiveChip");
+  setExactText(liveChip, livePreview.active ? `${String(livePreview.camera || "").toUpperCase()} LIVE` : "LIVE OFF");
+  setClass(liveChip, `pill ${livePreview.active ? "success" : "neutral"}`);
+
+  renderOffroadMetricGrid("offroadVehicleGrid", [
+    ["기어", vehicle.gear],
+    ["정차", boolLabel(vehicle.standstill)],
+    ["파킹", boolLabel(vehicle.parkingBrake)],
+    ["문", boolLabel(vehicle.doorOpen)],
+    ["벨트", vehicle.seatbeltUnlatched ? "미착용" : "착용"],
+    ["전압", vehicle.carVoltage],
+  ]);
+
+  const camera = state.ui.offroadCameraMode === "driver" ? "driver" : "wide";
+  renderOffroadCameraCard(camera, offroad.snapshots?.[camera] || {}, livePreview);
+  syncOffroadLiveImageRefresh();
+}
+
+function renderStatusMode() {
+  const offroadView = $("statusOffroadView");
+  const driveView = $("statusDriveView");
+  if (!offroadView || !driveView) return;
+
+  const showOffroad = isOffroadConsoleVisible();
+  offroadView.classList.toggle("is-hidden", !showOffroad);
+  driveView.classList.toggle("is-hidden", showOffroad);
+
+  if (!showOffroad && offroadLiveImageTimer) {
+    window.clearInterval(offroadLiveImageTimer);
+    offroadLiveImageTimer = null;
+  }
+}
+
 function renderStatusDetailsToggle() {
   const wrap = $("statusDetailsWrap");
   const button = $("toggleStatusDetailsButton");
@@ -423,8 +563,10 @@ function renderStatusCard(gridId, entries) {
 }
 
 function renderStatusPanels() {
+  renderStatusMode();
+  renderOffroadConsole();
   renderStatusDetailsToggle();
-  if (!state.status || !state.ui.statusDetailsExpanded) return;
+  if (!state.status || isOffroadConsoleVisible() || !state.ui.statusDetailsExpanded) return;
 
   renderStatusCard("deviceInfoGrid", [
     ["Started", state.status.device.started],
@@ -955,6 +1097,57 @@ function renderDebug() {
   );
   setExactText("debugFakeLongViewer", debug.fakeLongDebugRaw || "{}");
   renderDebugCommandConfig();
+}
+
+async function requestOffroadSnapshot(camera) {
+  try {
+    await api("/api/offroad/snapshot", {
+      method: "POST",
+      body: JSON.stringify({ camera }),
+    });
+    await refreshStatusOnly();
+    renderStatusHero();
+    renderStatusPanels();
+    addLog("오프로드 스냅샷", `${camera === "wide" ? "wide" : "DM"} 스냅샷을 갱신했습니다.`);
+    renderRecentChanges();
+  } catch (error) {
+    addLog("오프로드 스냅샷 실패", error.message);
+    renderRecentChanges();
+  }
+}
+
+async function startOffroadLive(camera) {
+  try {
+    await api("/api/offroad/live/start", {
+      method: "POST",
+      body: JSON.stringify({ camera }),
+    });
+    await refreshStatusOnly();
+    renderStatusHero();
+    renderStatusPanels();
+    addLog("실시간 조회 시작", `${camera === "wide" ? "wide" : "DM"} 라이브 조회를 시작했습니다.`);
+    renderRecentChanges();
+  } catch (error) {
+    addLog("실시간 조회 실패", error.message);
+    renderRecentChanges();
+  }
+}
+
+async function stopOffroadLive() {
+  try {
+    await api("/api/offroad/live/stop", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await refreshStatusOnly();
+    renderStatusHero();
+    renderStatusPanels();
+    addLog("실시간 조회 종료", "오프로드 라이브 조회를 중지했습니다.");
+    renderRecentChanges();
+  } catch (error) {
+    addLog("실시간 조회 종료 실패", error.message);
+    renderRecentChanges();
+  }
 }
 
 async function setCanMonitoringEnabled(enabled) {
@@ -1587,6 +1780,24 @@ function bindActions() {
     await setCanMonitoringEnabled(!state.monitoring.canEnabled);
   });
 
+  $("offroadCameraSwitchButton").addEventListener("click", () => {
+    state.ui.offroadCameraMode = state.ui.offroadCameraMode === "wide" ? "driver" : "wide";
+    renderOffroadConsole();
+  });
+
+  $("offroadCameraSnapshotButton").addEventListener("click", async () => {
+    await requestOffroadSnapshot(state.ui.offroadCameraMode);
+  });
+
+  $("offroadCameraLiveButton").addEventListener("click", async () => {
+    const livePreview = state.status?.offroadConsole?.livePreview;
+    if (livePreview?.active && livePreview.camera === state.ui.offroadCameraMode) {
+      await stopOffroadLive();
+      return;
+    }
+    await startOffroadLive(state.ui.offroadCameraMode);
+  });
+
   $("refreshDebugButton").addEventListener("click", async () => {
     await refreshDebugView();
   });
@@ -1744,6 +1955,10 @@ function startAutoRefresh() {
   }
 
   document.addEventListener("visibilitychange", () => {
+    if (document.hidden && offroadLiveImageTimer) {
+      window.clearInterval(offroadLiveImageTimer);
+      offroadLiveImageTimer = null;
+    }
     if (!document.hidden) {
       if (state.activeTab === "status") {
         refreshLiveStatusView();

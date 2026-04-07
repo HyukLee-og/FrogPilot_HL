@@ -124,11 +124,13 @@ private:
   bool awake = false;
   int interactive_timeout = 0;
   bool ignition_on = false;
+  int last_offroad_wake_counter = 0;
 
   int offroad_brightness = BACKLIGHT_OFFROAD;
   int last_brightness = 0;
   FirstOrderFilter brightness_filter;
   QFuture<void> brightness_future;
+  Params params_memory{"", true};
 
   void updateBrightness(const UIState &s, const FrogPilotUIState &fs);
   void updateWakefulness(const UIState &s, const FrogPilotUIState &fs);

@@ -1,3 +1,33 @@
+패치 업데이트 (2026-04-07, 오프로드 웨이크 / 오프로드 콘솔 / startup 문구 / NNFF 대체)
+====================================================================================
+* 오프로드 화면 웨이크
+  * GM 차량에서 offroad + ignition off 상태일 때 문 열림 / 도어핸들 입력 CAN 신호를 감지해 화면을 깨우는 경량 `offroad_wake_watcher` 추가
+  * full `card/carState`를 offroad에 돌리지 않고, raw CAN 감시 후 `OffroadWakeCounter`만 올려 UI의 기존 `interactive_timeout` 경로를 재사용하도록 구성
+  * offroad wake는 기존 화면 timeout 설정을 따르며, timeout이 0일 때는 20초 fallback을 사용
+* 오프로드 웹 콘솔
+  * `ignition off + offroad` 상태에서는 웹 상태 탭이 주행 상태 화면 대신 차량 상태 / 위치 / 카메라 스냅샷 중심의 offroad 콘솔로 전환
+  * 카메라 패널은 단일 뷰 구조로 정리하고, 우측 상단 토글로 `실내 / 실외` 전환
+  * 오프로드 스냅샷은
+    * 시동이 꺼지는 순간 1회 자동 저장
+    * 웹에서 마지막 스냅샷이 1시간 이상 오래된 경우 1회 자동 갱신
+    * 수동 `갱신` 버튼
+    * 선택형 `LIVE` 미리보기
+    구조로 정리
+* startup / HUD
+  * `StartupAlert`를 `CLEAR`로 비우면 startup alert 자체를 띄우지 않도록 수정
+  * onroad 초기 fallback 문구를
+    * `오픈파일럿 준비중`
+    * `주행 제어 시스템 부팅중입니다`
+    로 변경
+  * 안전벨트 아이콘은 속도 HUD 좌상단에서 기존보다 더 작은 크기로 조정
+* NNFF
+  * Traverse는 NNFF 지원 판단 및 모델 탐색에서 Trailblazer NNFF substitute를 사용하도록 별도 `nnff_substitute.toml` 경로 추가
+  * 토크 substitute는 건드리지 않고 NNFF 경로만 대체되도록 분리
+* 패키징
+  * 위 UI/params 변경에 맞춰 UTM device-ABI 런타임 산출물 갱신:
+    * `common/params_pyx.so`
+    * `selfdrive/ui/ui`
+
 패치 업데이트 (2026-04-05, APN 대시보드/디버그, 알럿 정리, 정차 오버레이)
 ===========================================================================
 * GM / APN / fake-long 도구

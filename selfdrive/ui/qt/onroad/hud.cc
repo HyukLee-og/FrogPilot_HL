@@ -14,6 +14,7 @@ constexpr int SET_SPEED_NA = 255;
 constexpr int STEERING_ICON_SIZE = 156;
 constexpr int STEERING_ICON_WARNING_SIZE = 188;
 constexpr int LFA_ICON_SIZE = 104;
+constexpr int SEATBELT_ICON_HEIGHT = 88;
 constexpr int HUD_SIDE_MARGIN = 104;
 constexpr int HUD_BOTTOM_MARGIN = 96;
 constexpr float PREVIEW_SPEED_KPH = 192.0f;
@@ -303,7 +304,7 @@ void HudRenderer::drawSeatbeltIcon(QPainter &p, const QRect &surface_rect) {
   const int group_top = surface_rect.height() - 246;
   const int center_x = surface_rect.center().x();
   const QRect speed_rect(center_x - 230, group_top - 18, 460, 162);
-  const int icon_height = LFA_ICON_SIZE;
+  const int icon_height = SEATBELT_ICON_HEIGHT;
   const int icon_width = std::lround(float(seatbelt_img.width()) * float(icon_height) / float(seatbelt_img.height()));
   const QRect icon_rect(speed_rect.left() - 10 - icon_width, speed_rect.top() + 2, icon_width, icon_height);
 

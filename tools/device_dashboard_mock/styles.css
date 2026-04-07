@@ -1,17 +1,17 @@
 :root {
-  --bg: #07111a;
-  --bg-2: #0d1a26;
-  --panel: rgba(13, 26, 38, 0.86);
-  --panel-strong: rgba(16, 32, 46, 0.94);
-  --line: rgba(170, 194, 212, 0.14);
-  --line-strong: rgba(104, 183, 255, 0.24);
-  --text: #eef4fb;
-  --muted: #8ca4b8;
-  --accent: #57d0a2;
-  --accent-2: #68b7ff;
-  --warning: #ffb457;
-  --shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
-  --radius: 24px;
+  --bg: #050608;
+  --bg-2: #0a0c0f;
+  --panel: rgba(12, 14, 17, 0.96);
+  --panel-strong: rgba(14, 16, 20, 0.98);
+  --line: rgba(255, 255, 255, 0.075);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --text: #f2f4f6;
+  --muted: #8d949c;
+  --accent: #52c98e;
+  --accent-2: #7c858f;
+  --warning: #cfa56a;
+  --shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
+  --radius: 18px;
 }
 
 * {
@@ -22,16 +22,13 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(104, 183, 255, 0.18), transparent 30%),
-    radial-gradient(circle at top right, rgba(87, 208, 162, 0.12), transparent 28%),
-    linear-gradient(180deg, #08121d 0%, #071018 100%);
+  background: linear-gradient(180deg, #050608 0%, #06080a 100%);
   color: var(--text);
   font-family: "Pretendard Variable", "SUIT Variable", "SF Pro Display", "Apple SD Gothic Neo", sans-serif;
 }
 
 body {
-  padding: 24px;
+  padding: 18px;
   overflow-x: hidden;
 }
 
@@ -54,7 +51,7 @@ body {
   grid-template-columns: auto auto;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .topbar-title-row {
@@ -68,8 +65,8 @@ body {
 .panel-kicker,
 .hero-label {
   margin: 0 0 8px;
-  color: #8fb7d5;
-  font-size: 12px;
+  color: #7c838b;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -84,8 +81,10 @@ p {
 }
 
 h1 {
-  font-size: clamp(26px, 3vw, 38px);
-  line-height: 1.04;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  font-weight: 760;
 }
 
 .topbar-actions {
@@ -106,7 +105,6 @@ h1 {
   background: var(--panel);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(18px);
   min-width: 0;
 }
 
@@ -114,10 +112,11 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 7px 11px;
   border-radius: 999px;
   min-width: 0;
   box-shadow: none;
+  background: rgba(12, 14, 17, 0.9);
 }
 
 .connection-card.offline {
@@ -135,7 +134,7 @@ h1 {
 
 .dot.live {
   background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(87, 208, 162, 0.12);
+  box-shadow: 0 0 0 3px rgba(82, 201, 142, 0.1);
 }
 
 .dot.offline {
@@ -176,23 +175,23 @@ h1 {
 .action-button,
 .mini-button,
 .tab-button {
-  border: 0;
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+  transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease;
 }
 
 .action-button:hover,
 .mini-button:hover,
 .tab-button:hover {
-  transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.055);
+  border-color: var(--line-strong);
 }
 
 .action-button {
-  padding: 11px 15px;
+  padding: 10px 14px;
   font-weight: 700;
 }
 
@@ -202,7 +201,9 @@ h1 {
 }
 
 .action-button-primary {
-  background: linear-gradient(135deg, #3fbf8d 0%, #2d7eff 100%);
+  background: rgba(14, 16, 20, 0.98);
+  border-color: rgba(82, 201, 142, 0.24);
+  color: #d7f5e6;
 }
 
 .tabbar {
@@ -211,24 +212,23 @@ h1 {
   z-index: 30;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 20px;
-  padding: 10px;
-  border-radius: 22px;
-  background: rgba(7, 16, 24, 0.72);
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(10, 12, 15, 0.94);
   border: 1px solid var(--line);
-  backdrop-filter: blur(18px);
 }
 
 .tab-button {
-  padding: 14px 16px;
-  font-size: 15px;
+  padding: 12px 12px;
+  font-size: 14px;
   font-weight: 800;
 }
 
 .tab-button.active {
-  background: linear-gradient(135deg, rgba(87, 208, 162, 0.25), rgba(104, 183, 255, 0.2));
-  border: 1px solid rgba(104, 183, 255, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .tab-panel {
@@ -240,8 +240,171 @@ h1 {
   gap: 20px;
 }
 
+.status-view.is-hidden {
+  display: none !important;
+}
+
 .status-details-wrap.is-collapsed {
   display: none;
+}
+
+.status-offroad-view {
+  display: grid;
+  gap: 14px;
+}
+
+.offroad-shell {
+  display: grid;
+  gap: 20px;
+  padding: 18px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.offroad-console-grid,
+.offroad-camera-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.offroad-console-grid {
+  grid-template-columns: 1fr;
+}
+
+.offroad-console-summary,
+.offroad-console-location,
+.offroad-camera-panel {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.offroad-camera-grid {
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  padding-top: 18px;
+}
+
+.offroad-console-head,
+.offroad-location-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.offroad-console-head h2,
+.offroad-location-head h3 {
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-weight: 760;
+}
+
+.offroad-console-head p,
+.offroad-location-head p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 28ch;
+}
+
+.offroad-mini-grid,
+.offroad-camera-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.offroad-mini-grid,
+.offroad-location-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.offroad-mini-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 14px;
+}
+
+.offroad-metric,
+.offroad-location-grid .status-main-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 0;
+  padding: 14px 0 10px;
+  min-width: 0;
+}
+
+.offroad-metric-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.offroad-metric-label {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.offroad-metric-value {
+  font-size: 15px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.offroad-camera-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.offroad-camera-stage {
+  position: relative;
+  min-height: 140px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, #090b0d, #0b0d10);
+}
+
+.offroad-camera-image,
+.offroad-camera-empty {
+  width: 100%;
+  height: 100%;
+  min-height: 140px;
+}
+
+.offroad-camera-image {
+  display: block;
+  object-fit: cover;
+  background: #08121d;
+}
+
+.offroad-camera-empty {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.offroad-camera-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.offroad-camera-actions .action-button {
+  flex: 1 1 0;
 }
 
 .panel-status-toggle {
@@ -269,13 +432,11 @@ h1 {
 
 .hero-card {
   border-radius: var(--radius);
-  padding: 22px;
+  padding: 18px;
 }
 
 .hero-card-primary {
-  background:
-    linear-gradient(135deg, rgba(87, 208, 162, 0.2), rgba(104, 183, 255, 0.08)),
-    var(--panel-strong);
+  background: var(--panel-strong);
 }
 
 .hero-main {
@@ -329,16 +490,18 @@ h1 {
 .pill {
   display: inline-flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 7px 11px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
+  border: 1px solid transparent;
 }
 
 .pill.success {
-  background: rgba(87, 208, 162, 0.16);
-  color: #8af1c6;
+  background: rgba(82, 201, 142, 0.1);
+  border-color: rgba(82, 201, 142, 0.18);
+  color: #91ddb4;
 }
 
 .pill.warn {
@@ -347,8 +510,9 @@ h1 {
 }
 
 .pill.neutral {
-  background: rgba(255, 255, 255, 0.08);
-  color: #cbd8e5;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: #b4bbc2;
 }
 
 .metric-stack {
@@ -425,20 +589,24 @@ h1 {
 
 .status-main-card {
   display: grid;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.05);
+  gap: 8px;
+  padding: 14px 15px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .status-main-card span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .status-main-card strong {
-  font-size: 26px;
-  line-height: 1.05;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.03em;
 }
 
 .status-grid {
@@ -531,7 +699,7 @@ h1 {
 }
 
 .panel {
-  padding: 22px;
+  padding: 18px;
 }
 
 .panel-header,
@@ -552,7 +720,7 @@ h1 {
 }
 
 .panel-header {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .panel-actions {
@@ -571,6 +739,33 @@ h1 {
 .panel-caption {
   color: var(--muted);
   font-size: 12px;
+}
+
+.offroad-console-summary .status-main-card strong,
+.offroad-console-location .status-main-card strong {
+  font-size: 20px;
+  font-weight: 720;
+}
+
+.offroad-camera-panel .panel-header {
+  margin-bottom: 10px;
+}
+
+.offroad-camera-panel .panel-caption {
+  color: #717980;
+  font-size: 10px;
+}
+
+.offroad-camera-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.offroad-camera-switch {
+  padding: 7px 11px;
+  min-height: auto;
+  font-size: 11px;
 }
 
 .device-grid,
@@ -1395,7 +1590,7 @@ h1 {
 
 @media (max-width: 820px) {
   body {
-    padding: 10px;
+    padding: 8px;
   }
 
   .app-shell {
@@ -1405,7 +1600,7 @@ h1 {
   .topbar {
     grid-template-columns: auto auto;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
   }
 
@@ -1426,6 +1621,23 @@ h1 {
     gap: 6px;
   }
 
+  .offroad-console-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .offroad-console-summary,
+  .offroad-console-location,
+  .offroad-camera-panel {
+    padding: 15px;
+    border-radius: 18px;
+  }
+
+  .offroad-console-head,
+  .offroad-location-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .connection-card {
     min-width: 0;
     width: auto;
@@ -1436,12 +1648,12 @@ h1 {
     top: 8px;
     padding: 6px;
     gap: 6px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
   .tab-button {
     padding: 10px 6px;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .device-grid,
@@ -1750,7 +1962,7 @@ h1 {
 
 @media (max-width: 520px) {
   .topbar-title-row h1 {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .connection-card {
@@ -1778,6 +1990,16 @@ h1 {
     gap: 14px;
   }
 
+  .offroad-camera-stage,
+  .offroad-camera-image,
+  .offroad-camera-empty {
+    min-height: 180px;
+  }
+
+  .offroad-camera-actions {
+    flex-direction: row;
+  }
+
   .hero-grid,
   .stats-hero-grid {
     grid-template-columns: 1fr;
@@ -1790,6 +2012,20 @@ h1 {
 
   .stats-hero-primary {
     gap: 12px;
+  }
+
+  .offroad-console-head h2,
+  .offroad-location-head h3 {
+    font-size: 22px;
+  }
+
+  .offroad-console-summary .status-main-card strong,
+  .offroad-console-location .status-main-card strong {
+    font-size: 18px;
+  }
+
+  .offroad-console-location .status-main-card:first-child strong {
+    font-size: 14px;
   }
 
   .stats-hero-primary .hero-main {

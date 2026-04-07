@@ -72,6 +72,7 @@ KONIK_PATH = Path("/cache/use_konik")
 MAPS_PATH = Path("/data/media/0/osm/offline")
 
 NNFF_MODELS_PATH = Path(BASEDIR) / "frogpilot/assets/nnff_models"
+NNFF_SUBSTITUTE_PATH = Path(BASEDIR) / "frogpilot/assets/nnff_substitute.toml"
 
 BUTTON_FUNCTIONS = {
   "NOTHING": 0,
@@ -184,6 +185,10 @@ def get_nnff_substitutes():
   with open(TORQUE_SUBSTITUTE_PATH, "rb") as f:
     substitutes_data = tomllib.load(f)
     substitutes = {key: value for key, value in substitutes_data.items()}
+  if NNFF_SUBSTITUTE_PATH.is_file():
+    with open(NNFF_SUBSTITUTE_PATH, "rb") as f:
+      nnff_substitutes_data = tomllib.load(f)
+      substitutes.update({key: value for key, value in nnff_substitutes_data.items()})
   return substitutes
 
 def nnff_supported(car_fingerprint):

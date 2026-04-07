@@ -267,6 +267,16 @@ void Device::updateWakefulness(const UIState &s, const FrogPilotUIState &fs) {
   const FrogPilotUIScene &frogpilot_scene = fs.frogpilot_scene;
   const QJsonObject &frogpilot_toggles = frogpilot_scene.frogpilot_toggles;
 
+  const int offroad_wake_counter = params_memory.getInt("OffroadWakeCounter");
+  if (!s.scene.started && !s.scene.ignition && offroad_wake_counter != last_offroad_wake_counter) {
+    int wake_timeout = frogpilot_toggles.value("screen_timeout").toInt();
+    if (wake_timeout <= 0) {
+      wake_timeout = 20;
+    }
+    resetInteractiveTimeout(wake_timeout, wake_timeout);
+  }
+  last_offroad_wake_counter = offroad_wake_counter;
+
   bool ignition_just_turned_off = !s.scene.ignition && ignition_on;
   ignition_on = s.scene.ignition;
 

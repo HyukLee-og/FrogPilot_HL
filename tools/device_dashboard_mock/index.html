@@ -35,6 +35,51 @@
       </nav>
 
       <section class="tab-panel active" data-panel="status">
+        <div id="statusOffroadView" class="status-view status-offroad-view is-hidden">
+          <section class="offroad-shell">
+          <section class="offroad-console-grid">
+            <article class="hero-card hero-card-primary offroad-console-summary">
+              <div class="hero-label">VEHICLE</div>
+              <div class="offroad-console-head">
+                <div>
+                  <h2 id="offroadConsoleTitle">차량</h2>
+                  <p id="offroadConsoleSubtitle">위치 정보 없음</p>
+                </div>
+                <div class="pill-row">
+                  <span id="offroadIgnitionChip" class="pill neutral">IGNITION OFF</span>
+                  <span id="offroadLiveChip" class="pill neutral">LIVE OFF</span>
+                </div>
+              </div>
+              <div id="offroadVehicleGrid" class="offroad-mini-grid"></div>
+            </article>
+          </section>
+
+          <section class="offroad-camera-grid">
+            <article class="panel offroad-camera-panel">
+              <div class="panel-header">
+                <div>
+                  <p id="offroadCameraKicker" class="panel-kicker">WIDE CAMERA</p>
+                  <h3 id="offroadCameraTitle">Wide</h3>
+                </div>
+                <div class="offroad-camera-header-actions">
+                  <span id="offroadCameraStamp" class="panel-caption">캡처 없음</span>
+                  <button id="offroadCameraSwitchButton" class="action-button offroad-camera-switch">실내</button>
+                </div>
+              </div>
+              <div class="offroad-camera-stage">
+                <img id="offroadCameraImage" class="offroad-camera-image" alt="camera snapshot" />
+                <div id="offroadCameraEmpty" class="offroad-camera-empty">스냅샷 없음</div>
+              </div>
+              <div class="offroad-camera-actions">
+                <button id="offroadCameraSnapshotButton" class="action-button">갱신</button>
+                <button id="offroadCameraLiveButton" class="action-button action-button-primary">LIVE</button>
+              </div>
+            </article>
+          </section>
+          </section>
+        </div>
+
+        <div id="statusDriveView" class="status-view">
         <section class="status-hero-grid">
           <article class="hero-card hero-card-primary">
             <div class="hero-label">Vehicle & Openpilot</div>

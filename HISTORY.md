@@ -1,6 +1,161 @@
 # frogpilot-testing-v1 작업 이력 / 인수인계 문서
 
-최종 갱신: 2026-04-05
+최종 갱신: 2026-04-07
+
+## 추가: 2026-04-07 오프로드 화면 wake / 오프로드 콘솔 / startup 문구 / NNFF 대체
+
+이 섹션은 `715b65c3` 이후부터 2026-04-07 현재까지 진행한 GM offroad wake, 오프로드 웹 콘솔, startup alert 문구/동작 정리, Traverse NNFF substitute 추가 내역을 정리한다.
+
+### 1. GM offroad wake 경로 추가
+
+관련 파일:
+
+- `frogpilot/system/offroad_wake_watcher.py`
+- `common/params_keys.h`
+- `system/manager/process_config.py`
+- `selfdrive/ui/ui.cc`
+- `selfdrive/ui/ui.h`
+
+#### 변경 이유
+
+- offroad 상태에서 문을 열고 탑승할 때 화면이 계속 꺼져 있어, 실제 탑승 이벤트에 맞춘 wake 경로가 필요했음
+- 기존 onroad `doorOpen` 이벤트는 `card/carState`에 의존하는데, 해당 경로는 offroad에서 돌지 않음
+- full `card/carState`를 offroad에 올리는 방식은 전력/복잡도 측면에서 불리하므로 피해야 했음
+
+#### 확인한 전제
+
+- UI는 이미 `ignition || interactive_timeout > 0`이면 켜진다
+  - `selfdrive/ui/ui.cc`
+- offroad에서도 `pandad`는 계속 raw `can`을 발행한다
+- GM low-speed DBC에는 door / handle 관련 신호가 존재한다
+  - `Door_Open_Switch_Status_LS`
+  - `Door_Handle_Switch_Status_LS`
+  - fallback으로 `DriverDoorStatus.DriverDoorOpened`
+
+#### 구현 방식
+
+- 새 always-run Python 프로세스 `offroad_wake_watcher` 추가
+- GM 차량에서만 동작
+- `deviceState.started == false` 이고 `ignition == false` 일 때만 감시
+- raw CAN에서 다음 신호를 edge-detect:
+  - `DrDoorOpenSwAct`
+  - `PsDoorOpenSwAct`
+  - `DrvDrHndleSwAtv`
+  - `PasDrHndleSwAtv`
+  - `RLDrHndleSwAtv`
+  - `RRDrHndleSwAtv`
+  - `RCHndleSwAtv`
+  - fallback `DriverDoorOpened`
+- 감지되면 memory params의 `OffroadWakeCounter`를 증가
+- UI는 `OffroadWakeCounter` 변화만 보고 `interactive_timeout`을 다시 채워 화면을 wake
+- wake 유지 시간은 기존 `screen_timeout`을 재사용하고, 해당 값이 0이면 `20초` fallback
+- 연속 튐 방지를 위해 watcher에는 `10초` cooldown 적용
+
+#### 장단점
+
+- 장점:
+  - full `card/carState`를 offroad에 띄우지 않음
+  - 기존 UI wake 경로를 그대로 재사용
+  - 차체 네트워크 이벤트 기반으로만 반응
+- 제한:
+  - BCM/body CAN이 완전히 잠든 상태에선 문 이벤트가 발생할 때만 깨어날 수 있음
+  - 실제 차량에서 offroad 상태에서도 위 신호가 안정적으로 보이는지는 실차 검증이 필요함
+
+### 2. 오프로드 웹 콘솔 재구성
+
+관련 파일:
+
+- `tools/device_dashboard_mock/server.py`
+- `tools/device_dashboard_mock/index.html`
+- `tools/device_dashboard_mock/app.js`
+- `tools/device_dashboard_mock/styles.css`
+
+#### 변경 이유
+
+- 기존 상태 탭은 offroad에서 주행용 카드 구조를 그대로 가져와 의미 대비 밀도가 떨어졌음
+- 테슬라 앱처럼 차량 상태/위치/최근 카메라를 보는 offroad 전용 콘솔 요구가 있었음
+
+#### 수정 내용
+
+- `ignition off + offroad` 상태에서는 상태 탭을 offroad 콘솔로 전환
+- 차량 상태는 카드 다중 구조 대신 얇은 구분선 기반 미니 그리드로 압축
+- 위치 정보는 차량 이름 아래 요약 문자열로 이동
+- 카메라 패널은 하나만 남기고, 우측 상단 토글로 `실내 / 실외` 전환
+- `갱신` 버튼으로 수동 스냅샷, `LIVE` 버튼으로 선택형 live preview
+
+#### 스냅샷 정책
+
+- 시동 꺼짐 이벤트 시 무조건 1회 자동 촬영
+- 웹에서 상태 조회 시 마지막 스냅샷이 1시간 넘게 오래됐으면 1회 자동 갱신
+- 완전한 백그라운드 주기 촬영이 아니라, offroad 상태에서만 의미 있는 이벤트/조회 시점에 촬영
+
+#### 구현 메모
+
+- 실제 기기에서는 `system/camerad/snapshot.py` 경로 사용
+- 로컬 미리보기에서는 placeholder snapshot 사용
+- live preview는 기기에서만 허용
+
+### 3. startup alert 동작 및 문구 정리
+
+관련 파일:
+
+- `selfdrive/selfdrived/selfdrived.py`
+- `selfdrive/ui/qt/onroad/alerts.cc`
+
+#### 수정 내용
+
+- `StartupAlert` 설정을 `CLEAR`로 비우면, 기존처럼 빈 문자열 startup alert를 띄우는 대신 startup event 자체를 만들지 않도록 수정
+- onroad 초기 `selfdriveWaiting` fallback 문구를 다음으로 변경:
+  - 제목: `오픈파일럿 준비중`
+  - 설명: `주행 제어 시스템 부팅중입니다`
+
+#### 의도
+
+- 기존 `openpilot Unavailable / Waiting to start`는 실제 의미보다 더 오류처럼 보였음
+- 실제 상태는 selfdrived/control stack 로딩 중이므로, 부팅/준비 의미의 문구가 더 정확함
+
+### 4. Traverse NNFF substitute 추가
+
+관련 파일:
+
+- `frogpilot/assets/nnff_substitute.toml`
+- `frogpilot/common/frogpilot_variables.py`
+- `frogpilot/ui/qt/offroad/frogpilot_settings.cc`
+
+#### 변경 이유
+
+- Traverse에서는 NNFF 지원이 직접 뜨지 않았고, Trailblazer NNFF 모델을 대체 적용하고 싶다는 요구가 있었음
+
+#### 구현 내용
+
+- torque substitute와 분리된 NNFF 전용 substitute 파일 추가
+- `CHEVROLET_TRAVERSE -> CHEVROLET_TRAILBLAZER`
+- Python 런타임 로더와 설정 UI의 NNFF 지원 판단 모두 새 substitute 파일까지 보도록 수정
+
+#### 의도
+
+- 토크 파라미터까지 Trailblazer로 덮어쓰는 부작용 없이
+- NNFF 모델 선택 경로만 대체
+
+### 5. 안전벨트 HUD 아이콘 미세조정
+
+관련 파일:
+
+- `selfdrive/ui/qt/onroad/hud.cc`
+
+#### 수정 내용
+
+- 기존에 추가된 안전벨트 아이콘은 원본 비율은 유지하되, HUD에서 너무 크게 보여 좌측 상단 균형을 해쳤음
+- 아이콘 높이를 한 단계 줄여 더 작게 표시하도록 조정
+
+### 6. 빌드 / 배포 상태
+
+- 로컬 macOS에서는 `COMMA_SYSROOT`가 없어 직접 device ABI 빌드 불가
+- UTM 워크스페이스 `/home/hyuklee/frogpilot-testing-v1` 와 `/home/hyuklee/comma-sysroot`를 사용해 clean build 수행
+- 2026-04-07 기준 산출물 해시:
+  - `selfdrive/ui/ui` = `0720dded9162a81a66b8269e6458cc20639af9f8`
+  - `common/params_pyx.so` = `ed381de93bbfaec6fa6a9b3571ab5c15099efeb6`
+- 이 빌드본에는 `OffroadWakeCounter`와 최신 startup 문구가 포함됨
 
 ## 추가: 2026-04-04 ~ 2026-04-05 대시보드 경량화 / seatbelt bypass / 정차 오버레이 / UTM 빌드 경로 정리
 

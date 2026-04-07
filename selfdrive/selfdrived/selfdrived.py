@@ -178,6 +178,10 @@ class SelfdriveD:
 
     self.FPCP = messaging.log_from_bytes(self.params.get("FrogPilotCarParams", block=True), custom.FrogPilotCarParams)
 
+    if self.startup_event == FrogPilotEventName.customStartupAlert and \
+       not self.frogpilot_toggles.startup_alert_top and not self.frogpilot_toggles.startup_alert_bottom:
+      self.startup_event = None
+
     if self.frogpilot_toggles.block_user:
       self.startup_event = FrogPilotEventName.blockUser
       sentry.capture_block()

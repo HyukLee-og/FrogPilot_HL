@@ -23,8 +23,12 @@ bool nnffLogFileExists(const QString &carFingerprint) {
       models.append(fileInfo.completeBaseName());
     }
 
-    QFile sub_file("../../opendbc/car/torque_data/substitute.toml");
-    if (sub_file.open(QIODevice::ReadOnly)) {
+    auto loadSubstitutes = [](const QString &path, QMap<QString, QString> &substitutes) {
+      QFile sub_file(path);
+      if (!sub_file.open(QIODevice::ReadOnly)) {
+        return;
+      }
+
       QTextStream in(&sub_file);
       while (!in.atEnd()) {
         QString line = in.readLine().trimmed();
@@ -41,7 +45,10 @@ bool nnffLogFileExists(const QString &carFingerprint) {
           }
         }
       }
-    }
+    };
+
+    loadSubstitutes("../../opendbc/car/torque_data/substitute.toml", substitutes);
+    loadSubstitutes("../../frogpilot/assets/nnff_substitute.toml", substitutes);
   }
 
   QStringList fingerprintsToCheck;
