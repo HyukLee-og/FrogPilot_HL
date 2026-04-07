@@ -1,294 +1,250 @@
-<div align="center" style="text-align: center;">
+# frogpilot-testing-v1
 
-<h1>openpilot</h1>
+본 저장소는 comma.ai의 오픈소스 자율주행 소프트웨어인 `openpilot`의 비공식 확장판인 `FrogPilot`을 기반으로,  
+한국어 사용자 환경에 적합한 UI 개선 및 시스템 안정성 강화 목적으로 제작된 개인 포크입니다.
 
-<p>
-  <b>openpilot is an operating system for robotics.</b>
-  <br>
-  Currently, it upgrades the driver assistance system in 300+ supported cars.
-</p>
+현재 브랜치는 순정 openpilot 또는 upstream FrogPilot과는 다르게, 다음과 같은 방향에 초점을 맞춰 개발되었습니다.
 
-<h3>
-  <a href="https://docs.comma.ai">Docs</a>
-  <span> · </span>
-  <a href="https://docs.comma.ai/contributing/roadmap/">Roadmap</a>
-  <span> · </span>
-  <a href="https://github.com/commaai/openpilot/blob/master/docs/CONTRIBUTING.md">Contribute</a>
-  <span> · </span>
-  <a href="https://discord.comma.ai">Community</a>
-  <span> · </span>
-  <a href="https://comma.ai/shop">Try it on a comma 3X</a>
-</h3>
-
-Quick start: `bash <(curl -fsSL openpilot.comma.ai)`
-
-[![openpilot tests](https://github.com/commaai/openpilot/actions/workflows/selfdrive_tests.yaml/badge.svg)](https://github.com/commaai/openpilot/actions/workflows/selfdrive_tests.yaml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![X Follow](https://img.shields.io/twitter/follow/comma_ai)](https://x.com/comma_ai)
-[![Discord](https://img.shields.io/discord/469524606043160576)](https://discord.comma.ai)
-
-</div>
-
-<table>
-  <tr>
-    <td><a href="https://youtu.be/NmBfgOanCyk" title="Video By Greer Viau"><img src="https://github.com/commaai/openpilot/assets/8762862/2f7112ae-f748-4f39-b617-fabd689c3772"></a></td>
-    <td><a href="https://youtu.be/VHKyqZ7t8Gw" title="Video By Logan LeGrand"><img src="https://github.com/commaai/openpilot/assets/8762862/92351544-2833-40d7-9e0b-7ef7ae37ec4c"></a></td>
-    <td><a href="https://youtu.be/SUIZYzxtMQs" title="A drive to Taco Bell"><img src="https://github.com/commaai/openpilot/assets/8762862/05ceefc5-2628-439c-a9b2-89ce77dc6f63"></a></td>
-  </tr>
-</table>
-
-
-Using openpilot in a car
-------
-
-To use openpilot in a car, you need four things:
-1. **Supported Device:** a comma 3/3X, available at [comma.ai/shop](https://comma.ai/shop/comma-3x).
-2. **Software:** The setup procedure for the comma 3/3X allows users to enter a URL for custom software. Use the URL `openpilot.comma.ai` to install the release version.
-3. **Supported Car:** Ensure that you have one of [the 275+ supported cars](docs/CARS.md).
-4. **Car Harness:** You will also need a [car harness](https://comma.ai/shop/car-harness) to connect your comma 3/3X to your car.
-
-We have detailed instructions for [how to install the harness and device in a car](https://comma.ai/setup). Note that it's possible to run openpilot on [other hardware](https://blog.comma.ai/self-driving-car-for-free/), although it's not plug-and-play.
-
-------
-
-<div align="center" style="text-align: center;">
-
-<h1>FrogPilot 🐸</h1>
-
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/FrogAi/FrogPilot)
-[![Discord](https://img.shields.io/discord/1137853399715549214?label=Discord)](https://discord.frogpilot.com)
-[![Last Updated](https://img.shields.io/badge/Last%20Updated-October%2018th%2C%202025-brightgreen)](https://github.com/FrogAi/FrogPilot/releases/latest)
-[![Wiki](https://img.shields.io/badge/Wiki-FrogPilot-blue?logo=wiki)](https://frogpilot.wiki.gg/)
-
-</div>
-
-------
-
-**FrogPilot** is a custom, community-driven, frog-themed fork of openpilot that grows and improves through the ideas and contributions of its users. It offers exciting new features and cutting-edge experiments that often arrive long before official releases. As an unofficial and highly experimental version of openpilot, **FrogPilot** should *always* be used with caution!
-
-Branch-Specific Additions (`testing-v1-apn`)
-------
-
-This branch includes several custom features that are not part of upstream openpilot or stock FrogPilot. The focus is practical GM integration, richer offroad tooling, and cleaner onroad UX.
-
-#### GM / Onroad UX
-- **APN / CarrotNavi integration** with custom SDI categorization and onroad rendering
-- **Custom hazard visuals** for speed cameras, section cameras, vulnerable zones, and other SDI types
-- **Parked standstill overlay** for `gear P + standstill`, using a dedicated full-screen parked state instead of the standard stop timer
-- **Seatbelt status icon** on the onroad HUD
-- **Startup message controls**, including:
-  - suppressing the startup alert when `StartupAlert = CLEAR`
-  - replacing the generic selfdrive waiting text with a localized boot message
-- **Resume-required alert prioritization**, so parked/auto-hold cases do not get buried by lower-value warnings
-
-#### Offroad Console
-- **Dedicated offroad dashboard** on port `8123`, separate from the stock settings experience
-- **Ignition-off console layout** with:
-  - vehicle overview
-  - last known location
-  - recent wide / driver camera snapshots
-  - live camera entry points
-- **Reduced polling / lower-load behavior** so web access is less likely to create onroad comm instability
-- **Debug tab for GM fake-long testing**, including button injection presets and runtime status visibility
-
-#### Camera / Snapshot Features
-- **Automatic snapshot on ignition-off transition**
-- **Stale snapshot refresh policy** for the offroad dashboard
-- **Independent wide / driver snapshot capture** for the web console, without depending on `RecordFront`
-
-#### Offroad Wake
-- **GM offroad wake watcher** that listens for low-speed body CAN activity such as door / handle events
-- Uses a lightweight wake counter path so the offroad UI can wake without bringing up the full car stack
-
-#### Lateral / NNFF
-- **Traverse -> Trailblazer NNFF substitution** so supported NNFF paths can be reused on Traverse without remapping torque tuning globally
-- **Localized NNFF status alerts** with clearer startup messaging
-
-#### Practical Toggles
-- **Ignore seatbelt unlatch** option for testing workflows
-- Preserves seatbelt indication in UI while separating it from the engage-blocking path when explicitly enabled
-
-openpilot vs **FrogPilot**
-------
-
-#### Community
-| Feature | openpilot | **FrogPilot** |
-|---------|:---------:|:---------:|
-| A Welcoming Community | ❌ | ✅ |
-| Erich / Primary Moderators / 🦇 | ✅ | ❌ |
-
-#### Core Features
-| Feature | openpilot | **FrogPilot** |
-|---------|:---------:|:---------:|
-| Always On Lateral (Steering) | ❌ | ✅ |
-| Blind Spot Integration | ✅ | ✅ |
-| Conditional Experimental Mode | ❌ | ✅ |
-| Custom Themes | ❌ | ✅ |
-| Driver Monitoring | ✅ | ✅ |
-| Driving Model Selector | ❌ | ✅ |
-| Holiday Themes | ❌ | ✅ |
-| Speed Limit Support | ❌ | ✅ |
-| Weather Detection | ❌ | ✅ |
-
-#### Device & Hardware
-| Feature | openpilot | **FrogPilot** |
-|---------|:---------:|:---------:|
-| Advanced Volume Controller | ❌ | ✅ |
-| Automatic Version Backups | ❌ | ✅ |
-| C3 Support | ❌ | ✅ |
-| comma Pedal Support | ❌ | ✅ |
-| High Quality Recordings | ❌ | ✅ |
-| SDSU Support | ❌ | ✅ |
-| ZSS Support | ❌ | ✅ |
-
-#### Gas/Brake
-| Feature | openpilot | **FrogPilot** |
-|---------|:---------:|:---------:|
-| Adaptive Cruise Control (ACC) | ✅ | ✅ |
-| Advanced Live Tuning | ❌ | ✅ |
-| Custom Following Distances | ❌ | ✅ |
-| Faster Human-Like Acceleration | ❌ | ✅ |
-| Human-Like Speed Control in Curves | ❌ | ✅ |
-| Smoother Human-Like Braking | ❌ | ✅ |
-
-#### Steering
-| Feature | openpilot | **FrogPilot** |
-|---------|:---------:|:---------:|
-| Advanced Live Tuning | ❌ | ✅ |
-| Automatic Lane Changes | ❌ | ✅ |
-| Increased Steering Torque* | ❌ | ✅ |
-| Lane Centering (LKAS) | ✅ | ✅ |
-| Lane Change Assist | ✅ | ✅ |
-
-*Select vehicles only
-
-And much much more!
-
-🌟 Highlight Features
-------
-
-### 🚗 Always On Lateral (AOL)
-
-With **"Always On Lateral"**, lane-centering stays active whenever cruise control is on, even when you press the accelerator or brake. This means steering assist won't cut out during manual speed adjustments giving you continuous support through curves, traffic, or mountain roads!
+- 한국어 중심 UI/알럿 정비
+- GM 차량 대상 실험 기능 및 디버그 도구 확장
+- Offroad 상태에서의 웹 대시보드/카메라/상태 조회 기능 강화
+- UTM 기반 device-ABI 빌드 및 실기 배포 안정성 개선
+- 주행 모델/NNFF/알럿/밝기/전원 로직 등 런타임 동작 보정
 
 ---
 
-### 🧠 Conditional Experimental Mode (CEM)
+## ⚖️ 법적 고지사항 (Legal Notice)
 
-**["Experimental Mode"](https://blog.comma.ai/090release/#experimental-mode)** lets openpilot drive at the speed it thinks a human would to allow slowing for curves, stopping at stoplights/stop signs, and adapting to traffic. This makes it powerful in complex scenarios, but it's still, well, "experimental" and less predictable than **"Chill Mode"**. But **"Conditional Experimental Mode"** gives you the best of both worlds by automatically switching between **"Chill Mode"** for steady cruising and **"Experimental Mode"** for more advanced situations to help fully automate your driving experience!
+🚨 **본 프로젝트는 어떠한 경우에도 실제 차량 주행에 사용되어서는 안 됩니다.**
 
-**"Conditional Experimental Mode"** switches into **"Experimental Mode"** when conditions like these are met:
-- Approaching curves and turns
-- Detecting slower or stopped lead vehicles
-- Driving below a set speed
-- Predicting an upcoming stop (e.g. stoplight or stop sign)
+2025년 8월 14일 시행되는 개정 「자동차관리법」에 따라,
 
-Once conditions clear it returns to **"Chill Mode"** for stability and predictability.
+⚠️ **차량의 안전운행에 영향을 미칠 수 있는 전자장치 또는 소프트웨어의 임의 설치·변경은 법률로 금지됩니다.**
 
-**Note: Stay attentive as "Experimental Mode" is an alpha feature and mistakes are expected!**
+이 저장소에 포함된 모든 소스코드, 리소스, 파생물은 다음 목적에 한해 제한적으로 사용될 수 있습니다.
 
----
+- 🎓 학술 연구 및 알고리즘 탐색
+- 🧪 시뮬레이션 또는 에뮬레이터 기반 테스트
+- 🛠️ 비상업적 개인 실험
 
-### 🎭 Driving Personalities
+실제 차량에의 적용, 공공도로 주행 등은 절대적으로 금지되며,  
+이와 관련하여 발생하는 모든 법적, 민사적, 형사적 책임은 전적으로 사용자에게 귀속됩니다.
 
-With **"Driving Personalities"**, you choose how the vehicle behaves with four adjustable profiles:
-
-- **Traffic:** Catered towards stop-and-go traffic by minimizing gaps and delays  
-- **Aggressive:** Aimed to provide tighter following distances and quicker reactions  
-- **Standard:** Useful for a balanced, all-purpose driving  
-- **Relaxed:** A smoother driving experience with larger following distance gaps  
-
-Each profile can be fine-tuned to change the desired following distance, acceleration, and braking style letting you shape **FrogPilot**'s behavior to match your own driving preferences! Profiles can be switched instantly using the following distance button on the steering wheel, while **"Traffic Mode"** can be enabled by simply holding down the following distance button.
+This software and its derivatives are intended strictly for non-commercial, academic, and simulation purposes.  
+In compliance with the amended Korean Motor Vehicle Management Act (effective August 14, 2025),  
+any unauthorized installation or modification of software affecting vehicle safety is strictly prohibited.  
+The developer assumes no liability for any real-world usage or legal consequences resulting from violations of this notice.
 
 ---
 
-### 📏 Speed Limit Controller (SLC)
+## 저장소 성격
 
-With **"Speed Limit Controller"**, **FrogPilot** automatically adapts to the road's posted speed using information from downloaded **["OpenStreetMap"](https://www.openstreetmap.org)** maps, online **["Mapbox"](https://www.mapbox.com)** data, and the vehicle's dashboard (if supported).
+이 저장소는 제품 배포용 브랜치가 아니라, 다음 항목을 실험·검증하기 위한 개발 브랜치입니다.
 
-Offsets let you fine-tune how closely **FrogPilot** follows posted limits across different speed ranges allowing you to cruise slightly above or below for a more natural driving experience. If no speed limit is available, you can choose whether **FrogPilot** drives at the set speed, falls back to the last known speed limit, or uses **"Experimental Mode"** to estimate one with the driving model.
-
-Maps can be downloaded directly in settings and updated automatically on a schedule ensuring your device always has the latest speed limits!
-
-**Note: Speed limits are only as accurate as the available speed limit data. Always stay attentive and adjust your speed when necessary!**
-
----
-
-### 🎨 Themes
-
-With **"Themes"**, you can personalize **FrogPilot**'s driving screen to make it uniquely yours! Choose from:
-
-- **Color Schemes**
-- **Icon Packs**
-- **Sound Packs**
-- **Turn Signal Animations**
-- **Steering Wheel Icons**
-
-Enjoy pre-existing **FrogPilot** and seasonal holiday themes, or you can create your own with the **"Theme Maker"** and even share them with the community! For extra fun, enable features like the Mario Kart–style **"Rainbow Path"** or **"Random Events"** that add playful visual effects while you drive!
+- GM 차량용 사용자 경험 보정
+- APN / CarrotNavi 연동
+- fake-long 및 ACC 버튼 실험 도구
+- 한국어 알럿 / HUD / offroad 웹 콘솔
+- offroad wake, snapshot, live preview 같은 부가 기능
+- precompiled driving model / NNFF / startup alert / power logic 같은 런타임 보정
 
 ---
 
-And lots more! From safety enhancements to personalization options, **FrogPilot** continues to evolve with features that put you in control. Check it out today for yourself!
+## 핵심 변경 사항
+
+아래 목록은 `HISTORY.md`와 `RELEASES.md`에 기록된 주요 작업을 기능 기준으로 재구성한 것입니다.
+
+### 1. Onroad UI / HUD / 알럿
+
+- `resumeRequired`가 운전자 부주의/무반응 및 `belowSteerSpeed`보다 우선되도록 알럿 우선순위 조정
+- `P + 정차` 상태에서 하단 정차 타이머 대신 full-screen dim 방식의 `정차중` 오버레이 추가
+  - `parking.png`
+  - `정차중`
+  - 정차 경과 타이머
+- 안전벨트 미착용 시 현재 속도 HUD 좌상단에 `seatbelt.png` 아이콘 표시
+- 안전벨트 아이콘 원본 비율 유지 및 크기 미세조정
+- startup alert를 `CLEAR`로 비웠을 때 alert 자체를 띄우지 않도록 수정
+- `selfdriveWaiting` fallback 문구를 한국어 부팅 문구로 변경
+  - `오픈파일럿 준비중`
+  - `주행 제어 시스템 부팅중입니다`
+- 커스텀 startup alert를 FrogPilot 전용 색상 상태가 아니라 일반 `normal` 상태로 정리
+- NNFF 로드/미지원 알럿을 한국어화
+  - `NNFF 토크 컨트롤러 로드됨`
+  - `인공 신경망 기반 모델이 차량을 제어합니다`
+  - `NNFF 토크 컨트롤러 사용 불가`
+  - `주행 로그를 기부하면 차량 지원에 도움이 됩니다`
+- 자동 밝기 로직 재조정
+  - 일반 저조도에서 너무 빨리 어두워지지 않도록 하한/암흑 기준 재설계
+  - 이중 감쇄 경로 제거
+
+### 2. APN / SDI / CarrotNavi 연동
+
+- APN bridge를 통해 안전운전 모드 카메라 정보가 다시 살아나도록 브리지 경로 수정
+- `nSdiType` 기준으로 SDI 타입 분류 체계 재정리
+  - `nSdiSection` 중심이 아니라 `SdiCodeConvert` 기준 해석으로 전환
+- APN hazard/SDI 시그니처 라벨링 기능 추가
+- onroad에서 SDI 타입별 커스텀 렌더링 추가
+  - 보호구역 계열
+  - 일반 단속 카메라 계열
+  - 후면 단속 카메라 계열
+  - 구간단속 시작/끝/진행중
+  - 가변 구간단속
+  - 특수 단속 카메라
+- APN 관련 HUD 정보 정리
+  - 도착예정 / 남은거리 / 남은시간
+  - APN 제한속도 / SDI / fake-long 상태 시각화
+
+### 3. GM fake-long / ACC 버튼 실험 경로
+
+- `Fake-Long`, `Fake-Long Test UI` 토글 추가
+- GM 순정 ACC 버튼 에뮬레이션 safety 경로 추가
+- onroad fake-long 디버그 오버레이 추가
+  - `FAKE / ACC` 카드
+  - `ARMED / PAUSED / TARGET / LAST` 상태 칩
+  - `MAIN / CANCEL / RES / SET` 테스트 버튼
+- GM synthetic button 경로를 실차 검증용 `camera-only` 구조로 단순화
+- 웹 디버그탭을 통해 `SET / RES / MAIN / CANCEL / UNPRESS` 테스트 가능
+- fake-long 런타임 상태/디버그 파라미터 추가
+  - `FakeLongDebug`
+  - `FakeLongTestButton`
+- 10 km/h 이하 자동 버튼 전송 금지
+- disengage/re-engage 사이에서도 fake-long 목표속도 관리 로직 정리
+- GM 계기판 속도와 현재속도 표시 보정 경로 추가
+
+### 4. Offroad 웹 대시보드 (`8123`)
+
+- 기기 웹 대시보드 추가
+  - 상태
+  - 설정
+  - 통계
+  - 조회
+  - 디버그
+- 헤더를 `Openpilot Console`로 통일
+- 모바일 환경 중심으로 레이아웃 재설계
+- 상태 탭은 기본적으로 가벼운 요약만 표시
+- 무거운 상세 상태는 `더보기` 뒤로 이동
+- CAN 모니터링/디버그 polling을 기본 비활성화해 주행 중 부하 감소
+- 통계 탭은 중복 지표 제거 및 모바일 밀도 개선
+- 오프로드 전용 콘솔 UI 추가
+  - 차량 개요
+  - 마지막 위치
+  - 최근 스냅샷
+  - 실시간 조회 진입점
+- `carState`가 없을 때 `정차 / 파킹 / 문 / 벨트`를 실제 값처럼 보이지 않게 `확인 불가` 처리
+
+### 5. Offroad snapshot / live preview
+
+- 시동이 꺼질 때 wide/driver 스냅샷 1회 자동 저장
+- 웹 접속 시 마지막 스냅샷이 오래된 경우 1회 자동 갱신
+- stale 기준을 시간 기반으로 재조정
+- 수동 `갱신` 버튼과 선택형 `LIVE` 버튼 추가
+- driver snapshot이 `RecordFront`에 종속되지 않도록 대시보드 전용 캡처 경로 분리
+- `wide / driver / both`를 직접 지정해 캡처하는 경로 추가
+
+### 6. Offroad wake
+
+- GM offroad wake watcher 추가
+- offroad + ignition off 상태에서 raw CAN만 경량 감시
+- 감시 신호:
+  - `Door_Open_Switch_Status_LS`
+  - `Door_Handle_Switch_Status_LS`
+  - fallback `DriverDoorStatus.DriverDoorOpened`
+- 감지 시 memory params의 `OffroadWakeCounter` 증가
+- UI는 `OffroadWakeCounter` 변화만 보고 기존 `interactive_timeout` 경로로 화면 wake
+- full `card/carState`를 offroad에서 띄우지 않는 구조
+- 이후 `CarMake`가 bytes로 저장되는 문제를 고쳐, GM 차량에서 watcher가 실제로 동작하도록 수정
+
+### 7. 안전벨트 관련 기능
+
+- `More` 아래에 `안전벨트 착용 여부 미확인` 토글 추가
+- 토글이 켜졌을 때만 `seatbeltNotLatched` no-entry를 우회하도록 구성
+- 초기 구현에서 capnp reader를 직접 수정하던 경로로 인해 `selfdrived` 크래시가 발생했으나,
+  이후 car-event 생성 전에 seatbelt 상태를 가리는 방식으로 재구성해 해결
+- 안전벨트 미착용 상태는 UI 아이콘으로는 유지하되, 토글이 켜진 경우에만 engage-blocking 경로를 분리
+
+### 8. 전원 / 화면 / 부팅 관련
+
+- 기존 FrogPilot 자동 종료 로직 복구
+  - `Device Shutdown Timer`
+  - `Low-Voltage Cutoff`
+- `강제 전원 로직 비활성화` 토글 추가
+- 부팅 배경/스피너 자산 조정
+- offroad wake와 screen timeout 로직 연동
+- 주행 중 웹세팅/디버그 접속 시 `commIssue`, `locationd`, `alertDebug` 폭주가 나던 문제를 줄이기 위해 대시보드 polling 경량화
+
+### 9. 주행 모델 / tinygrad / 모델 다운로드
+
+- FrogPilot 주행 모델 다운로드 경로 복구
+- `Driving Model` UI 다시 활성화
+- 다운로드 시 사전컴파일 artifact를 우선 사용하도록 전환
+- legacy tinygrad pickle/runtime 호환성 보강
+  - old module path alias
+  - enum alias
+  - `BUFFER_VIEW` legacy 처리
+  - `ProgramSpec.estimates` 복구
+- 기기에서 precompiled 다운로드 모델이 실제로 끝까지 로드/실행되도록 경로 수정
+- `steam-powered`, `sc-driving` 등 다운로드 모델을 실기에서 검증
+- `ForceOnroad / ForceOffroad` 런타임 반영 경로도 함께 정리
+
+### 10. NNFF / Traverse 지원 보정
+
+- Traverse가 NNFF 지원 판단에서 제외되던 문제를 해결하기 위해 별도 NNFF substitute 추가
+- `CHEVROLET_TRAVERSE -> CHEVROLET_TRAILBLAZER`
+- torque substitute와 분리된 NNFF 전용 substitute 파일 사용
+- 설정 UI, 모델 탐색, 런타임 로딩 모두 substitute 경로 반영
+
+### 11. 주행 이벤트 / FCW / 기타 보정
+
+- FCW 민감도 후속 조정
+  - 운전자가 이미 브레이크를 밟고 있어도 전방 충돌 경고가 suppress되지 않도록 수정
+- lane / blindspot / no-lane / green-light / lead-departing 계열 알럿 보정
+- onroad stop timer 포맷과 standstill 표현 정리
+- 이전에 추가된 blindspot 아이콘 기능 유지
+
+### 12. 빌드 / 배포 / 안정성
+
+- stale UTM 워크스페이스로 빌드한 UI가 기기 Qt ABI와 맞지 않아 `QPushButton::hitButton` 심볼 오류가 나던 문제를 분석 및 해결
+- UTM clean build + device-ABI 빌드 워크플로 정리
+- checked-in `selfdrive/ui/ui`, `common/params_pyx.so` 갱신
+- `mapd`, launch, backup, service restart 관련 런타임 문제 다수 수정
+- fresh clone 후 기기 부팅/서비스 정상화 검증 경험 축적
 
 ---
 
-🔧 Branches
-------
-| Branch                     | Install&nbsp;URL          | Description                                            | Recommended&nbsp;For     |
-|----------------------------|---------------------------|--------------------------------------------------------|--------------------------|
-| FrogPilot                  | frogpilot.download        | The main release branch.                               | Everyone                 |
-| FrogPilot&#8209;Staging    | staging.frogpilot.download| Beta branch with upcoming features. Expect bugs!       | Early&nbsp;Adopters      |
-| FrogPilot&#8209;Testing    | testing.frogpilot.download| Alpha branch with bleeding-edge features. Breaks often!| Advanced&nbsp;Testers    |
-| FrogPilot&#8209;Development| No :)                     | Active development branch. Do not use!                 | **FrogPilot**&nbsp;Developers|
-| MAKE&#8209;PRS&#8209;HERE  | No :)                     | Workspace for pull requests. Do not use!               | Contributors             |
+## 현재 이 브랜치에서 볼 수 있는 대표 기능
 
-🧰 How to Install
-------
+- 한국어 startup / NNFF / onroad 알럿
+- 보호구역 / 단속 / 구간단속 중심의 APN HUD
+- GM fake-long 테스트용 onroad / 웹 디버그 도구
+- ignition off 상태의 offroad 콘솔
+- 최근 wide / driver snapshot 및 live preview 진입
+- 문 / 도어핸들 기반 offroad 화면 wake
+- 안전벨트 bypass 토글과 HUD 아이콘
+- Traverse용 NNFF substitute
 
-The easiest way to install **FrogPilot** is by entering this URL on the installation screen:
+---
 
-```
-frogpilot.download
-```
+## 알려진 제한 사항
 
-**DO NOT** install the **FrogPilot-Development** branch. I'm constantly breaking things on there, so unless you don't want to use **FrogPilot**, **NEVER** install it!
+- GM synthetic `SET / RES`는 `cancel`에 비해 차량 수용성이 떨어지며, 실차 조건에 따라 완전히 해결되지 않은 상태입니다.
+- offroad wake는 차체 네트워크가 실제로 깨어나는 door/handle 이벤트에 의존합니다.
+- offroad 콘솔의 일부 상태 값은 `carState`가 없으면 `확인 불가`로 표시됩니다.
+- 이 저장소는 기능 실험과 기기별 검증이 계속 섞여 있는 개발 브랜치이므로, 모든 기능이 항상 완성 상태를 보장하지 않습니다.
 
-![](https://i.imgur.com/FsufQtO.png)
+---
 
-🐞 Bug Reports / Feature Requests
-------
+## 참고 문서
 
-If you run into bugs, issues, or have ideas for new features, please post about it on the **[FrogPilot Discord](https://discord.gg/frogpilot)**! Feedback helps improve **FrogPilot** and create a better experience for everyone!
+- [HISTORY.md](/Users/ijonghyeog/Desktop/frogpilot-testing-v1/HISTORY.md)
+  - 작업 흐름, 시행착오, 원인 분석, 인수인계 기록
+- [RELEASES.md](/Users/ijonghyeog/Desktop/frogpilot-testing-v1/RELEASES.md)
+  - 날짜별 패치 요약
+- [GM_CAN_SIGNAL_INVENTORY.md](/Users/ijonghyeog/Desktop/frogpilot-testing-v1/GM_CAN_SIGNAL_INVENTORY.md)
+  - GM DBC / CAN 신호 정리
 
-To report a bug, please post it in [**#bug-reports**](https://discord.com/channels/1137853399715549214/1162100167110053888).  
-To request a feature, please post it in [**#feature-requests**](https://discord.com/channels/1137853399715549214/1160318669839147259).  
+---
 
-Please include as much detail as possible! Photos, videos, log files, or anything that can help explain the issue or idea are very helpful!
+## 주의
 
-I'll do my best to respond promptly, but not every request can be addressed right away. Your feedback is always appreciated and helps make **FrogPilot** the best it can be!
-
-📋 Credits
-------
-
-* [Aidenir](https://github.com/Aidenir)
-* [AlexandreSato](https://github.com/AlexandreSato)
-* [cfranyota](https://github.com/cfranyota)
-* [cydia2020](https://github.com/cydia2020)
-* [dragonpilot-community](https://github.com/dragonpilot-community)
-* [ErichMoraga](https://github.com/ErichMoraga)
-* [garrettpall](https://github.com/garrettpall)
-* [jakethesnake420](https://github.com/jakethesnake420)
-* [jyoung8607](https://github.com/jyoung8607)
-* [mike8643](https://github.com/mike8643)
-* [neokii](https://github.com/neokii)
-* [OPGM](https://github.com/opgm)
-* [OPKR](https://github.com/openpilotkr)
-* [pfeiferj](https://github.com/pfeiferj)
-* [realfast](https://github.com/realfast)
-* [syncword](https://github.com/syncword)
-* [twilsonco](https://github.com/twilsonco)
-
-Star History
-------
-
-[![Star History Chart](https://api.star-history.com/svg?repos=FrogAi/FrogPilot&type=Date)](https://www.star-history.com/#FrogAi/FrogPilot&Date)
+이 저장소는 **실차 주행용 소프트웨어 배포를 목적으로 하지 않습니다.**  
+연구, 시뮬레이션, 실험, UI/알고리즘 검증 목적으로만 다뤄야 합니다.
