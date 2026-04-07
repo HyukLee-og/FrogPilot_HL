@@ -416,7 +416,7 @@ def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messagin
 
 # FrogPilot variables
 def custom_startup_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, frogpilot_toggles: SimpleNamespace) -> Alert:
-  return StartupAlert(frogpilot_toggles.startup_alert_top, frogpilot_toggles.startup_alert_bottom, alert_status=FrogPilotAlertStatus.frogpilot)
+  return StartupAlert(frogpilot_toggles.startup_alert_top, frogpilot_toggles.startup_alert_bottom, alert_status=AlertStatus.normal)
 
 
 def forcing_stop_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality, frogpilot_toggles: SimpleNamespace) -> Alert:
@@ -458,14 +458,14 @@ def nnff_loaded_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMast
   model_name = Params().get("NNFFModelName")
   if model_name is None:
     return Alert(
-      "NNFF Torque Controller not available",
-      "Donate logs to Twilsonco to get your car supported!",
+      "NNFF 토크 컨트롤러 사용 불가",
+      "주행 로그를 기부하면 차량 지원에 도움이 됩니다",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 10.0)
   else:
     return Alert(
-      "NNFF Torque Controller loaded with:",
-      model_name,
+      "NNFF 토크 컨트롤러 로드됨",
+      "인공 신경망 기반 모델이 차량을 제어합니다",
       FrogPilotAlertStatus.frogpilot, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.engage, 5.0)
 

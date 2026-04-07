@@ -18,7 +18,12 @@ def build_parser(dbc_name: str, messages: list[str], bus: int) -> CANParser:
 
 
 def is_gm_make(params: Params) -> bool:
-  return str(params.get("CarMake", return_default=True) or "") in GM_MAKES
+  raw = params.get("CarMake", return_default=True)
+  if isinstance(raw, (bytes, bytearray)):
+    make = raw.decode("utf-8", errors="ignore")
+  else:
+    make = str(raw or "")
+  return make in GM_MAKES
 
 
 def ignition_on(panda_states) -> bool:

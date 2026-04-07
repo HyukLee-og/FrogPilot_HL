@@ -1,6 +1,70 @@
 # frogpilot-testing-v1 작업 이력 / 인수인계 문서
 
-최종 갱신: 2026-04-07
+최종 갱신: 2026-04-08
+
+## 추가: 2026-04-08 offroad wake GM 판별 수정 / 오프로드 콘솔 상태 정리 / NNFF 문구 현지화
+
+이 섹션은 `ee59d0c1` 이후 추가된 소규모 후속 수정 사항을 정리한다.
+
+### 1. GM offroad wake watcher 실제 동작 수정
+
+관련 파일:
+
+- `frogpilot/system/offroad_wake_watcher.py`
+
+#### 원인
+
+- `CarMake` params는 bytes로 저장되는데, watcher에서 이를 `str(bytes)` 형태로 비교하고 있었음
+- 결과적으로 `b'Chevrolet'` 같은 문자열이 되어 GM 차량이어도 `is_gm_make()`가 `False`가 되었고, offroad wake 감시가 즉시 빠져 실제로 문을 열어도 화면이 켜지지 않았음
+
+#### 수정
+
+- `CarMake`가 bytes/bytearray일 경우 UTF-8 decode 후 make 비교하도록 수정
+- 실기에서 `CarMake = Chevrolet`, `is_gm = True`를 확인해 watcher가 정상 GM 판별 경로를 타도록 정리
+
+### 2. 오프로드 콘솔 카메라/상태 표시 정리
+
+관련 파일:
+
+- `tools/device_dashboard_mock/server.py`
+- `tools/device_dashboard_mock/app.js`
+
+#### 수정 내용
+
+- offroad 콘솔 스냅샷은 더 이상 `RecordFront`에 의존하지 않고, `wide / driver / both`를 대시보드 전용 캡처 경로로 직접 요청
+- 그 결과 `실내` 카메라 스냅샷이 offroad 콘솔에서 정상 표시되도록 수정
+- `carState`가 실제로 없을 때 `정차 / 파킹 / 문 / 벨트`를 거짓 기본값으로 채우지 않고 `확인 불가`로 표시하도록 변경
+
+#### 이유
+
+- 기존 fallback이 실제 상태처럼 보여 오해를 만들었음
+- offroad에서는 `carState`가 항상 보장되지 않으므로, 실제 미수신 상태를 UI에서 명시적으로 드러내는 편이 맞음
+
+### 3. startup / NNFF 알럿 문구 및 스타일 정리
+
+관련 파일:
+
+- `selfdrive/selfdrived/events.py`
+
+#### 수정 내용
+
+- `customStartupAlert`를 FrogPilot 전용 스타일이 아니라 일반 `normal` 스타일로 변경
+- NNFF 로드/미지원 문구를 한국어로 변경
+  - `NNFF 토크 컨트롤러 사용 불가`
+  - `주행 로그를 기부하면 차량 지원에 도움이 됩니다`
+  - `NNFF 토크 컨트롤러 로드됨`
+  - `인공 신경망 기반 모델이 차량을 제어합니다`
+
+### 4. README 정비
+
+관련 파일:
+
+- `README.md`
+
+#### 수정 내용
+
+- upstream/open-source 소개 문단 아래에 `testing-v1-apn` 브랜치 전용 추가 기능 섹션을 신설
+- APN/SDI HUD, offroad console, offroad wake, NNFF substitute, practical toggles 같은 실제 커스텀 기능을 README에서 바로 확인할 수 있도록 정리
 
 ## 추가: 2026-04-07 오프로드 화면 wake / 오프로드 콘솔 / startup 문구 / NNFF 대체
 

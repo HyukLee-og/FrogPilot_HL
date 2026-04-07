@@ -66,6 +66,48 @@ We have detailed instructions for [how to install the harness and device in a ca
 
 **FrogPilot** is a custom, community-driven, frog-themed fork of openpilot that grows and improves through the ideas and contributions of its users. It offers exciting new features and cutting-edge experiments that often arrive long before official releases. As an unofficial and highly experimental version of openpilot, **FrogPilot** should *always* be used with caution!
 
+Branch-Specific Additions (`testing-v1-apn`)
+------
+
+This branch includes several custom features that are not part of upstream openpilot or stock FrogPilot. The focus is practical GM integration, richer offroad tooling, and cleaner onroad UX.
+
+#### GM / Onroad UX
+- **APN / CarrotNavi integration** with custom SDI categorization and onroad rendering
+- **Custom hazard visuals** for speed cameras, section cameras, vulnerable zones, and other SDI types
+- **Parked standstill overlay** for `gear P + standstill`, using a dedicated full-screen parked state instead of the standard stop timer
+- **Seatbelt status icon** on the onroad HUD
+- **Startup message controls**, including:
+  - suppressing the startup alert when `StartupAlert = CLEAR`
+  - replacing the generic selfdrive waiting text with a localized boot message
+- **Resume-required alert prioritization**, so parked/auto-hold cases do not get buried by lower-value warnings
+
+#### Offroad Console
+- **Dedicated offroad dashboard** on port `8123`, separate from the stock settings experience
+- **Ignition-off console layout** with:
+  - vehicle overview
+  - last known location
+  - recent wide / driver camera snapshots
+  - live camera entry points
+- **Reduced polling / lower-load behavior** so web access is less likely to create onroad comm instability
+- **Debug tab for GM fake-long testing**, including button injection presets and runtime status visibility
+
+#### Camera / Snapshot Features
+- **Automatic snapshot on ignition-off transition**
+- **Stale snapshot refresh policy** for the offroad dashboard
+- **Independent wide / driver snapshot capture** for the web console, without depending on `RecordFront`
+
+#### Offroad Wake
+- **GM offroad wake watcher** that listens for low-speed body CAN activity such as door / handle events
+- Uses a lightweight wake counter path so the offroad UI can wake without bringing up the full car stack
+
+#### Lateral / NNFF
+- **Traverse -> Trailblazer NNFF substitution** so supported NNFF paths can be reused on Traverse without remapping torque tuning globally
+- **Localized NNFF status alerts** with clearer startup messaging
+
+#### Practical Toggles
+- **Ignore seatbelt unlatch** option for testing workflows
+- Preserves seatbelt indication in UI while separating it from the engage-blocking path when explicitly enabled
+
 openpilot vs **FrogPilot**
 ------
 

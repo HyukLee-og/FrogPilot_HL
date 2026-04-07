@@ -103,6 +103,7 @@ function formatDateTimeLabel(ts) {
 }
 
 function boolLabel(value) {
+  if (value === null || value === undefined || value === "") return "확인 불가";
   return value ? "ON" : "OFF";
 }
 
@@ -486,7 +487,7 @@ function renderOffroadConsole() {
     ["정차", boolLabel(vehicle.standstill)],
     ["파킹", boolLabel(vehicle.parkingBrake)],
     ["문", boolLabel(vehicle.doorOpen)],
-    ["벨트", vehicle.seatbeltUnlatched ? "미착용" : "착용"],
+    ["벨트", vehicle.seatbeltUnlatched === null || vehicle.seatbeltUnlatched === undefined ? "확인 불가" : (vehicle.seatbeltUnlatched ? "미착용" : "착용")],
     ["전압", vehicle.carVoltage],
   ]);
 

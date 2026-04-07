@@ -965,6 +965,50 @@ def offroad_camera_allowed() -> tuple[bool, str]:
   return True, ""
 
 
+def capture_dashboard_snapshots(camera: str) -> tuple[Any, Any]:
+  normalized = str(camera or "").strip().lower()
+  if normalized not in {"wide", "driver", "both"}:
+    raise ValueError("camera must be one of: wide, driver, both")
+
+  try:
+    from openpilot.system.camerad.snapshot import get_snapshots
+    from openpilot.system.manager.process_config import managed_processes
+    from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
+  except Exception as exc:
+    raise RuntimeError(f"snapshot import failed: {exc}") from exc
+
+  if Params is None:
+    raise RuntimeError("params unavailable")
+  params = Params()
+
+  if (not params.get_bool("IsOffroad")) or params.get_bool("IsTakingSnapshot"):
+    raise RuntimeError("이미 스냅샷을 찍고 있거나 offroad 상태가 아닙니다.")
+
+  frame = "wideRoadCameraState" if normalized in {"wide", "both"} else None
+  front_frame = "driverCameraState" if normalized in {"driver", "both"} else None
+  if frame is None and front_frame is None:
+    raise RuntimeError("no camera selected")
+
+  camerad_started = False
+  params.put_bool("IsTakingSnapshot", True)
+  set_offroad_alert("Offroad_IsTakingSnapshot", True)
+  time.sleep(2.0)
+
+  try:
+    camerad_running = subprocess.run(["pgrep", "camerad"], capture_output=True, check=False).returncode == 0
+    if not camerad_running:
+      managed_processes["camerad"].start()
+      camerad_started = True
+
+    rear, front = get_snapshots(frame, front_frame)
+    return rear, front
+  finally:
+    if camerad_started:
+      managed_processes["camerad"].stop()
+    params.put_bool("IsTakingSnapshot", False)
+    set_offroad_alert("Offroad_IsTakingSnapshot", False)
+
+
 def take_offroad_snapshot(camera: str) -> dict[str, Any]:
   normalized = str(camera or "").strip().lower()
   if normalized not in {"wide", "driver", "both"}:
@@ -991,13 +1035,12 @@ def take_offroad_snapshot(camera: str) -> dict[str, Any]:
     raise RuntimeError(reason)
 
   try:
-    from openpilot.system.camerad.snapshot import snapshot as capture_snapshot
     from openpilot.system.camerad.snapshot import jpeg_write
   except Exception as exc:
     raise RuntimeError(f"snapshot import failed: {exc}") from exc
 
   with _OFFROAD_CAMERA_LOCK:
-    rear, front = capture_snapshot()
+    rear, front = capture_dashboard_snapshots(normalized)
     if normalized in {"wide", "both"} and rear is not None:
       jpeg_write(str(OFFROAD_SNAPSHOT_DIR / "wide.jpg"), rear)
     if normalized in {"driver", "both"} and front is not None:
@@ -1080,10 +1123,11 @@ def build_offroad_console(params: dict[str, dict[str, Any]], live: dict[str, Any
     "vehicle": {
       "displayName": (param_value(params, "CarModelName", "-") or param_value(params, "CarModel", "-") or "-"),
       "gear": GEAR.get(maybe_raw(getattr(car_state, "gearShifter", 0)), "-") if car_state is not None else "-",
-      "standstill": bool(getattr(car_state, "standstill", False)) if car_state is not None else False,
-      "parkingBrake": bool(getattr(car_state, "parkingBrake", False)) if car_state is not None else False,
-      "doorOpen": bool(getattr(car_state, "doorOpen", False)) if car_state is not None else False,
-      "seatbeltUnlatched": bool(getattr(car_state, "seatbeltUnlatched", False)) if car_state is not None else False,
+      "hasLiveCarState": car_state is not None,
+      "standstill": bool(getattr(car_state, "standstill", False)) if car_state is not None else None,
+      "parkingBrake": bool(getattr(car_state, "parkingBrake", False)) if car_state is not None else None,
+      "doorOpen": bool(getattr(car_state, "doorOpen", False)) if car_state is not None else None,
+      "seatbeltUnlatched": bool(getattr(car_state, "seatbeltUnlatched", False)) if car_state is not None else None,
       "carVoltage": format_voltage(getattr(live.get("peripheralState"), "voltage", 0)) if live.get("peripheralState") is not None else "-",
       "updatedAt": time.time(),
     },
